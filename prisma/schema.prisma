@@ -1,0 +1,47 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model JournalEntry {
+  id         String     @id @default(cuid())
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+  date       DateTime   @unique
+  rawContent String
+  yesterday  String?
+  today      String?
+  tomorrow   String?
+  mood       String?
+  tasks      Task[]
+  reminders  Reminder[]
+}
+
+model Task {
+  id             String        @id @default(cuid())
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  title          String
+  description    String?
+  dueDate        DateTime?
+  completed      Boolean       @default(false)
+  priority       String        @default("medium")
+  source         String        @default("journal")
+  journalEntryId String?
+  journalEntry   JournalEntry? @relation(fields: [journalEntryId], references: [id], onDelete: SetNull)
+}
+
+model Reminder {
+  id             String        @id @default(cuid())
+  createdAt      DateTime      @default(now())
+  title          String
+  description    String?
+  eventDate      DateTime
+  reminded       Boolean       @default(false)
+  journalEntryId String?
+  journalEntry   JournalEntry? @relation(fields: [journalEntryId], references: [id], onDelete: SetNull)
+}
