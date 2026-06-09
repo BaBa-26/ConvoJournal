@@ -1,9 +1,10 @@
 import OpenAI from "openai";
 
 if (!process.env.OPENAI_API_KEY) {
-  throw new Error("OPENAI_API_KEY environment variable is not set");
+  throw new Error("OPENAI_API_KEY is required for Whisper voice transcription");
 }
 
+// Used only for Whisper speech-to-text transcription
 export const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
