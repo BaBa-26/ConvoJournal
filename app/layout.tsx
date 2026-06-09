@@ -1,14 +1,28 @@
 import type { Metadata, Viewport } from "next";
+import { Playfair_Display, DM_Mono } from "next/font/google";
 import "./globals.css";
 
+const playfair = Playfair_Display({
+  subsets: ["latin"],
+  variable: "--font-playfair",
+  display: "swap",
+});
+
+const dmMono = DM_Mono({
+  subsets: ["latin"],
+  weight: ["300", "400", "500"],
+  variable: "--font-dm-mono",
+  display: "swap",
+});
+
 export const metadata: Metadata = {
-  title: "ConvoJournal",
-  description: "Your conversational daily journal",
+  title: "Murmur",
+  description: "A quiet place for your thoughts",
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
-    statusBarStyle: "default",
-    title: "ConvoJournal",
+    statusBarStyle: "black-translucent",
+    title: "Murmur",
   },
 };
 
@@ -17,18 +31,15 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 1,
   userScalable: false,
-  themeColor: "#d97f26",
+  themeColor: "#0f0e0b",
 };
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
-      <body className="min-h-screen bg-stone-50">
-        <div className="max-w-lg mx-auto min-h-screen flex flex-col">
+    <html lang="en" className={`${playfair.variable} ${dmMono.variable}`}>
+      <body className="min-h-screen bg-ink-950 overflow-x-hidden">
+        {/* Max width container — centers on tablet/desktop, full-width on mobile */}
+        <div className="max-w-[430px] mx-auto min-h-screen flex flex-col relative">
           {children}
         </div>
       </body>

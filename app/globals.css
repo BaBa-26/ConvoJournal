@@ -5,33 +5,80 @@
 @layer base {
   html {
     -webkit-tap-highlight-color: transparent;
+    -webkit-text-size-adjust: 100%;
+    background-color: #0f0e0b;
   }
+
   body {
-    @apply bg-stone-50 text-stone-900 antialiased;
+    background-color: #0f0e0b;
+    color: #e8d5b0;
+    font-family: var(--font-dm-mono), ui-monospace, monospace;
+    -webkit-font-smoothing: antialiased;
+    overscroll-behavior: none;
+  }
+
+  /* Scrollbar — hide on mobile, minimal on desktop */
+  ::-webkit-scrollbar { width: 3px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #3d3a35; border-radius: 2px; }
+
+  /* Remove autofill yellow */
+  input:-webkit-autofill,
+  textarea:-webkit-autofill {
+    -webkit-box-shadow: 0 0 0 100px #1a1815 inset;
+    -webkit-text-fill-color: #e8d5b0;
   }
 }
 
 @layer components {
+  /* ─── Buttons ─────────────────────────────────────────── */
   .btn-primary {
-    @apply bg-journal-500 text-white px-4 py-2 rounded-xl font-medium
-           hover:bg-journal-600 active:bg-journal-700
-           transition-colors duration-150 disabled:opacity-50 disabled:cursor-not-allowed;
+    @apply bg-gold text-ink-950 px-5 py-3 rounded-xl font-mono text-sm font-medium
+           tracking-wide transition-all duration-150
+           active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed
+           min-h-[44px] flex items-center justify-center gap-2;
   }
-  .btn-secondary {
-    @apply bg-stone-100 text-stone-700 px-4 py-2 rounded-xl font-medium
-           hover:bg-stone-200 active:bg-stone-300
-           transition-colors duration-150;
+  .btn-ghost {
+    @apply text-parchment-600 px-5 py-3 rounded-xl font-mono text-sm
+           border border-ink-600 tracking-wide transition-all duration-150
+           active:scale-95 active:bg-ink-800 disabled:opacity-40
+           min-h-[44px] flex items-center justify-center gap-2;
   }
+
+  /* ─── Cards ────────────────────────────────────────────── */
   .card {
-    @apply bg-white rounded-2xl shadow-sm border border-stone-100 p-4;
+    @apply bg-ink-900 border border-ink-700 rounded-2xl p-4;
   }
-  .section-label {
-    @apply text-xs font-semibold uppercase tracking-wider text-stone-400 mb-2;
+  .card-tight {
+    @apply bg-ink-900 border border-ink-700 rounded-xl p-3;
   }
-  .textarea-journal {
-    @apply w-full min-h-[120px] resize-none rounded-xl border border-stone-200
-           bg-stone-50 px-4 py-3 text-base text-stone-800 placeholder-stone-400
-           focus:outline-none focus:ring-2 focus:ring-journal-400 focus:border-transparent
-           transition-all duration-150;
+
+  /* ─── Labels ───────────────────────────────────────────── */
+  .label {
+    @apply text-[10px] font-mono uppercase tracking-[0.2em] text-parchment-600;
   }
+
+  /* ─── Inputs ───────────────────────────────────────────── */
+  .input {
+    @apply w-full bg-ink-800 border border-ink-600 rounded-xl px-4 py-3
+           text-sm text-parchment-200 placeholder-parchment-700 font-mono
+           focus:outline-none focus:border-gold/60 focus:ring-1 focus:ring-gold/30
+           transition-all duration-150 min-h-[44px];
+  }
+  .textarea {
+    @apply input resize-none;
+  }
+
+  /* ─── Section divider ──────────────────────────────────── */
+  .divider {
+    @apply border-t border-ink-700 my-4;
+  }
+}
+
+/* ─── Safe area padding for PWA ───────────────────────── */
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+.pt-safe {
+  padding-top: env(safe-area-inset-top, 0px);
 }
