@@ -63,7 +63,7 @@ export interface ExtractedReminder {
 
 // ─── UI-only helpers ──────────────────────────────────────────────────────────
 
-export type RecordingPhase = "idle" | "recording" | "analyzing" | "review";
+export type RecordingPhase = "idle" | "writing" | "recording" | "analyzing" | "review";
 export type TaskFilter = "all" | "pending" | "completed";
 export type ActiveTab = "journal" | "tasks" | "reminders";
 
