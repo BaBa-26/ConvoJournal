@@ -19,12 +19,14 @@ module.exports = {
         // Parchment text
         parchment: {
           DEFAULT: "#e8d5b0",
+          100: "#f0e4cc",
           200: "#e8d5b0",
           300: "#d4c09a",
           400: "#c8b89a",
           500: "#b8a88a",
           600: "#8a7a68",
           700: "#6a5a4a",
+          800: "#4a3c2e",
         },
         // Amber gold accent
         gold: {
