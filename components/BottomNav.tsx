@@ -5,9 +5,8 @@ import { usePathname } from "next/navigation";
 
 // Symbolic glyphs — no external icon library needed
 const tabs = [
-  { href: "/",          glyph: "✦", label: "Journal" },
-  { href: "/tasks",     glyph: "◈", label: "Tasks"   },
-  { href: "/reminders", glyph: "◎", label: "Remind"  },
+  { href: "/",         glyph: "✦", label: "Journal"  },
+  { href: "/schedule", glyph: "▦", label: "Schedule" },
 ];
 
 export default function BottomNav() {

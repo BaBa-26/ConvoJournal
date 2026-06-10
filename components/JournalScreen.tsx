@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { format } from "date-fns";
 import Waveform from "./Waveform";
 import { useRecorder } from "@/hooks/useRecorder";
-import type { RecordingPhase, ParsedEntry, JournalEntry } from "@/types";
+import { buildAutocompleteEngine, type AutocompleteEngine } from "@/lib/autocomplete";
+import type { RecordingPhase, ParsedEntry } from "@/types";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -45,22 +46,24 @@ function useTypingReveal(text: string, active: boolean): string {
 
 // ─── Phase components ─────────────────────────────────────────────────────────
 
-function IdlePhase({ onStart }: { onStart: () => void }) {
+function IdlePhase({ onStart, onWrite }: { onStart: () => void; onWrite: () => void }) {
   return (
     <div className="flex flex-col items-center justify-center flex-1 gap-8 animate-fade-in">
       {/* Tagline */}
-      <div className="text-center">
+      <div className="text-center space-y-1">
         <p className="font-mono text-xs uppercase tracking-[0.25em] text-parchment-600">
           {format(new Date(), "EEEE, MMMM d")}
         </p>
-        <p className="font-mono text-parchment-700 text-xs mt-3 tracking-wide">
-          speak your mind
+        <p className="font-mono text-parchment-400 text-sm mt-3 tracking-wide">
+          how are you feeling today?
+        </p>
+        <p className="font-mono text-parchment-800 text-[11px] tracking-wide">
+          speak your mind or write it out
         </p>
       </div>
 
       {/* Mic button with pulse ring */}
       <div className="relative flex items-center justify-center">
-        {/* Outer pulse ring */}
         <span className="absolute inset-0 rounded-full bg-gold/20 animate-pulse-ring" />
         <button
           onClick={onStart}
@@ -70,7 +73,6 @@ function IdlePhase({ onStart }: { onStart: () => void }) {
                      hover:border-gold hover:shadow-gold-glow focus:outline-none"
           aria-label="Start recording"
         >
-          {/* Mic SVG — no icon library */}
           <svg width="36" height="36" viewBox="0 0 24 24" fill="none"
                stroke="#c8a878" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
             <rect x="9" y="2" width="6" height="11" rx="3"/>
@@ -81,9 +83,158 @@ function IdlePhase({ onStart }: { onStart: () => void }) {
         </button>
       </div>
 
-      <p className="font-mono text-parchment-700 text-[11px] tracking-[0.15em] uppercase">
-        tap to begin
-      </p>
+      <div className="flex flex-col items-center gap-4">
+        <p className="font-mono text-parchment-700 text-[11px] tracking-[0.15em] uppercase">
+          tap to speak
+        </p>
+
+        {/* Divider */}
+        <div className="flex items-center gap-3 w-40">
+          <div className="flex-1 h-px bg-ink-700" />
+          <span className="font-mono text-[10px] text-parchment-800 uppercase tracking-widest">or</span>
+          <div className="flex-1 h-px bg-ink-700" />
+        </div>
+
+        {/* Write instead */}
+        <button
+          onClick={onWrite}
+          className="flex items-center gap-2 px-5 py-2.5 rounded-full
+                     border border-ink-700 hover:border-parchment-700/50
+                     transition-all duration-200 active:scale-95 focus:outline-none group"
+          aria-label="Write your entry"
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none"
+               stroke="#8a7a6a" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"
+               className="group-hover:stroke-parchment-500 transition-colors">
+            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+          </svg>
+          <span className="font-mono text-[11px] tracking-[0.15em] uppercase text-parchment-700
+                           group-hover:text-parchment-500 transition-colors">
+            write it out
+          </span>
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function WritingPhase({
+  onSubmit,
+  onCancel,
+  getSuggestions,
+}: {
+  onSubmit: (text: string) => void;
+  onCancel: () => void;
+  getSuggestions: (text: string, cursor: number) => string[];
+}) {
+  const [text, setText]     = useState("");
+  const [cursor, setCursor] = useState(0);
+  const textareaRef         = useRef<HTMLTextAreaElement>(null);
+
+  const suggestions = useMemo(
+    () => (text.length >= 2 ? getSuggestions(text, cursor) : []),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [text, cursor]
+  );
+
+  const updateCursor = (e: React.SyntheticEvent<HTMLTextAreaElement>) =>
+    setCursor((e.target as HTMLTextAreaElement).selectionStart ?? 0);
+
+  const insertSuggestion = useCallback(
+    (word: string) => {
+      const ta = textareaRef.current;
+      if (!ta) return;
+
+      const pos = cursor;
+      const val = ta.value;
+
+      // Walk back from cursor to find start of the current partial word
+      let wordStart = pos;
+      while (wordStart > 0 && !/\s/.test(val[wordStart - 1])) wordStart--;
+
+      const newText   = val.slice(0, wordStart) + word + " " + val.slice(pos);
+      const newCursor = wordStart + word.length + 1;
+
+      setText(newText);
+      setCursor(newCursor);
+
+      requestAnimationFrame(() => {
+        ta.selectionStart = newCursor;
+        ta.selectionEnd   = newCursor;
+        ta.focus();
+      });
+    },
+    [cursor]
+  );
+
+  return (
+    <div className="flex flex-col flex-1 gap-5 animate-fade-in">
+      <div className="text-center">
+        <p className="font-mono text-xs uppercase tracking-[0.25em] text-parchment-600">
+          {format(new Date(), "EEEE, MMMM d")}
+        </p>
+        <p className="font-mono text-parchment-400 text-sm mt-3 tracking-wide">
+          how are you feeling today?
+        </p>
+      </div>
+
+      {/* Suggestion strip */}
+      <div className="min-h-[32px] flex items-center">
+        {suggestions.length > 0 ? (
+          <div className="flex gap-2 overflow-x-auto w-full pb-0.5 scrollbar-none">
+            {suggestions.map((s) => (
+              <button
+                key={s}
+                onMouseDown={(e) => { e.preventDefault(); insertSuggestion(s); }}
+                className="flex-shrink-0 px-3 py-1 rounded-full
+                           bg-ink-800 border border-ink-600
+                           font-mono text-[11px] text-parchment-400
+                           hover:border-parchment-700/50 hover:text-parchment-300
+                           active:scale-95 transition-all duration-100 focus:outline-none"
+              >
+                {s}
+              </button>
+            ))}
+          </div>
+        ) : (
+          <p className="font-mono text-[10px] text-parchment-800 tracking-widest">
+            suggestions appear as you type
+          </p>
+        )}
+      </div>
+
+      <div className="card flex-1 flex flex-col">
+        <textarea
+          ref={textareaRef}
+          className="flex-1 w-full min-h-[200px] bg-transparent font-mono text-sm
+                     text-parchment-300 placeholder-parchment-800 resize-none
+                     focus:outline-none leading-7"
+          placeholder={"just start writing…\n\nyesterday i finished…\ntoday i need to…\nfeeling pretty…"}
+          value={text}
+          onChange={(e) => { setText(e.target.value); updateCursor(e); }}
+          onSelect={updateCursor}
+          onClick={updateCursor}
+          onKeyUp={updateCursor}
+          autoFocus
+        />
+        <p className="text-right font-mono text-[10px] text-parchment-800 mt-2">
+          {text.length} chars
+        </p>
+      </div>
+
+      <div className="flex gap-3 sticky bottom-0 bg-ink-950 pb-2">
+        <button onClick={onCancel} className="btn-ghost flex-1">
+          ← back
+        </button>
+        <button
+          onClick={() => text.trim() && onSubmit(text.trim())}
+          disabled={!text.trim()}
+          className="btn-primary flex-1 disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          Analyse entry
+        </button>
+      </div>
     </div>
   );
 }
@@ -142,7 +293,7 @@ function AnalyzingPhase({ transcript }: { transcript: string }) {
       {/* Scrolling transcript with typing cursor */}
       <div className="flex-1 overflow-y-auto">
         <div className="card min-h-[200px]">
-          <p className="label mb-3">Transcript</p>
+          <p className="label mb-3">Entry</p>
           <p className="font-mono text-sm leading-7 text-parchment-300 whitespace-pre-wrap">
             {displayed}
             {/* Blinking cursor */}
@@ -324,10 +475,25 @@ export default function JournalScreen() {
   const [analyzeError, setAnalyzeError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  // Holds the content to save — either voice transcript or manual text
+  const [activeContent, setActiveContent] = useState("");
+
+  // Autocomplete engine — lazy-init once on first use, persists for session
+  const engineRef = useRef<AutocompleteEngine | null>(null);
+  const getEngine = useCallback((): AutocompleteEngine => {
+    if (!engineRef.current) engineRef.current = buildAutocompleteEngine();
+    return engineRef.current;
+  }, []);
+
+  const getSuggestions = useCallback(
+    (text: string, cursor: number) => getEngine().getSuggestions(text, cursor),
+    [getEngine]
+  );
 
   // When recorder finishes transcribing → analyze
   useEffect(() => {
     if (recState === "idle" && transcript && phase === "recording") {
+      setActiveContent(transcript);
       runAnalysis(transcript);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -369,28 +535,36 @@ export default function JournalScreen() {
     setPhase("analyzing");
   }, [stopRecording]);
 
+  const handleWriteSubmit = useCallback((text: string) => {
+    setActiveContent(text);
+    runAnalysis(text);
+  }, [runAnalysis]);
+
   const handleSave = useCallback(async () => {
-    if (!transcript) return;
+    if (!activeContent) return;
     setSaving(true);
     try {
       await fetch("/api/journal", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ rawContent: transcript, analysis: parsed ?? { tasks: [], reminders: [] } }),
+        body: JSON.stringify({ rawContent: activeContent, analysis: parsed ?? { tasks: [], reminders: [] } }),
       });
+      // Train the local autocomplete model on every saved entry
+      getEngine().train(activeContent);
       setSaved(true);
     } catch {
       setAnalyzeError("Failed to save entry.");
     } finally {
       setSaving(false);
     }
-  }, [transcript, parsed]);
+  }, [activeContent, parsed]);
 
   const handleDiscard = useCallback(() => {
     reset();
     setParsed(null);
     setSaved(false);
     setPhase("idle");
+    setActiveContent("");
   }, [reset]);
 
   // ── Saved confirmation ─────────────────────────────────
@@ -448,12 +622,13 @@ export default function JournalScreen() {
           </div>
         )}
 
-        {phase === "idle"      && <IdlePhase onStart={handleStart} />}
+        {phase === "idle"      && <IdlePhase onStart={handleStart} onWrite={() => setPhase("writing")} />}
+        {phase === "writing"   && <WritingPhase onSubmit={handleWriteSubmit} onCancel={() => setPhase("idle")} getSuggestions={getSuggestions} />}
         {phase === "recording" && <RecordingPhase elapsed={elapsed} onStop={handleStop} />}
-        {phase === "analyzing" && <AnalyzingPhase transcript={transcript} />}
+        {phase === "analyzing" && <AnalyzingPhase transcript={activeContent} />}
         {phase === "review"    && parsed && (
           <ReviewPhase
-            transcript={transcript}
+            transcript={activeContent}
             parsed={parsed}
             onSave={handleSave}
             onDiscard={handleDiscard}
