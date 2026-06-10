@@ -2,7 +2,33 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { format } from "date-fns";
+import { useSession, signIn } from "next-auth/react";
 import type { Task, TaskFilter } from "@/types";
+
+// ─── Shared auth gate ─────────────────────────────────────────────────────────
+
+function AuthGate({ feature }: { feature: string }) {
+  return (
+    <div className="flex flex-col items-center justify-center flex-1 gap-6 px-8">
+      <div className="text-center space-y-2">
+        <p className="font-mono text-3xl text-parchment-800">◈</p>
+        <h2 className="font-display text-xl text-parchment-300">Sign in to view your {feature}</h2>
+        <p className="font-mono text-xs text-parchment-700 leading-6">
+          Your journal data is private and<br />tied to your account.
+        </p>
+      </div>
+      <button
+        onClick={() => signIn()}
+        className="btn-primary px-8"
+      >
+        Sign in
+      </button>
+      <p className="font-mono text-[9px] text-parchment-800 tracking-widest uppercase">
+        Voice recording still works without signing in
+      </p>
+    </div>
+  );
+}
 
 const PRIORITY_COLORS: Record<string, string> = {
   high:   "#c87a6a",
@@ -182,16 +208,18 @@ function AddTaskForm({ onAdd, onCancel }: { onAdd: (t: Partial<Task>) => void; o
 // ─── Main screen ──────────────────────────────────────────────────────────────
 
 export default function TasksScreen() {
+  const { data: session, status } = useSession();
   const [tasks, setTasks]       = useState<Task[]>([]);
   const [filter, setFilter]     = useState<TaskFilter>("pending");
   const [loading, setLoading]   = useState(true);
   const [showAdd, setShowAdd]   = useState(false);
 
   const fetchTasks = useCallback(async () => {
+    if (!session) { setLoading(false); return; }
     const res = await fetch("/api/tasks");
     if (res.ok) setTasks(await res.json());
     setLoading(false);
-  }, []);
+  }, [session]);
 
   useEffect(() => { fetchTasks(); }, [fetchTasks]);
 
@@ -231,6 +259,11 @@ export default function TasksScreen() {
   );
 
   const pending = tasks.filter((t) => !t.completed).length;
+
+  // ── Auth gate ──────────────────────────────────────────
+  if (status !== "loading" && !session) {
+    return <AuthGate feature="tasks" />;
+  }
 
   return (
     <div className="flex flex-col flex-1 overflow-hidden">

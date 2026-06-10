@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Playfair_Display, DM_Mono } from "next/font/google";
+import AuthProvider from "@/components/AuthProvider";
 import "./globals.css";
 
 const playfair = Playfair_Display({
@@ -38,10 +39,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" className={`${playfair.variable} ${dmMono.variable}`}>
       <body className="min-h-screen bg-ink-950 overflow-x-hidden">
-        {/* Max width container — centers on tablet/desktop, full-width on mobile */}
-        <div className="max-w-[430px] mx-auto min-h-screen flex flex-col relative">
-          {children}
-        </div>
+        <AuthProvider>
+          <div className="max-w-[430px] mx-auto min-h-screen flex flex-col relative">
+            {children}
+          </div>
+        </AuthProvider>
       </body>
     </html>
   );
