@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { format, parseISO } from "date-fns";
+import { useSession, signIn } from "next-auth/react";
 import Waveform from "./Waveform";
 import { useRecorder } from "@/hooks/useRecorder";
 import { buildAutocompleteEngine, type AutocompleteEngine } from "@/lib/autocomplete";
@@ -402,12 +403,14 @@ function ReviewPhase({
   onSave,
   onDiscard,
   saving,
+  requiresAuth,
 }: {
   transcript: string;
   parsed: ParsedEntry;
   onSave: () => void;
   onDiscard: () => void;
   saving: boolean;
+  requiresAuth: boolean;
 }) {
   const [showRaw, setShowRaw] = useState(false);
 
@@ -513,9 +516,20 @@ function ReviewPhase({
         <button onClick={onDiscard} className="btn-ghost flex-1">
           Discard
         </button>
-        <button onClick={onSave} disabled={saving} className="btn-primary flex-1">
-          {saving ? "Saving…" : "Save Entry"}
-        </button>
+        {requiresAuth ? (
+          // Not signed in — prompt to sign in to save
+          <button
+            onClick={() => signIn()}
+            className="btn-primary flex-1 flex-col gap-0.5 py-2"
+          >
+            <span className="text-xs leading-none">Sign in to save</span>
+            <span className="text-[9px] opacity-70 leading-none font-mono tracking-wide">your entry + tasks</span>
+          </button>
+        ) : (
+          <button onClick={onSave} disabled={saving} className="btn-primary flex-1">
+            {saving ? "Saving…" : "Save Entry"}
+          </button>
+        )}
       </div>
     </div>
   );
@@ -642,6 +656,7 @@ function moodEmoji(mood: string): string {
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export default function JournalScreen() {
+  const { data: session } = useSession();
   const { state: recState, elapsed, transcript, error, startRecording, stopRecording, reset } =
     useRecorder();
 
@@ -841,6 +856,7 @@ export default function JournalScreen() {
             onSave={handleSave}
             onDiscard={handleDiscard}
             saving={saving}
+            requiresAuth={!session}
           />
         )}
       </div>

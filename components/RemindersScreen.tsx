@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import {
   format, isToday, isTomorrow, isPast, differenceInDays, differenceInHours,
 } from "date-fns";
+import { useSession, signIn } from "next-auth/react";
 import type { Reminder } from "@/types";
 
 // ─── Reminder card ────────────────────────────────────────────────────────────
@@ -116,15 +117,17 @@ function AddReminderForm({ onAdd, onCancel }: { onAdd: (r: Partial<Reminder>) =>
 // ─── Main screen ──────────────────────────────────────────────────────────────
 
 export default function RemindersScreen() {
+  const { data: session, status } = useSession();
   const [reminders, setReminders] = useState<Reminder[]>([]);
   const [loading, setLoading]     = useState(true);
   const [showAdd, setShowAdd]     = useState(false);
 
   const fetchReminders = useCallback(async () => {
+    if (!session) { setLoading(false); return; }
     const res = await fetch("/api/reminders");
     if (res.ok) setReminders(await res.json());
     setLoading(false);
-  }, []);
+  }, [session]);
 
   useEffect(() => { fetchReminders(); }, [fetchReminders]);
 
@@ -147,6 +150,25 @@ export default function RemindersScreen() {
 
   const upcoming = reminders.filter((r) => !isPast(new Date(r.eventDate)) || isToday(new Date(r.eventDate)));
   const past     = reminders.filter((r) => isPast(new Date(r.eventDate)) && !isToday(new Date(r.eventDate)));
+
+  // ── Auth gate ──────────────────────────────────────────
+  if (status !== "loading" && !session) {
+    return (
+      <div className="flex flex-col items-center justify-center flex-1 gap-6 px-8">
+        <div className="text-center space-y-2">
+          <p className="font-mono text-3xl text-parchment-800">◎</p>
+          <h2 className="font-display text-xl text-parchment-300">Sign in to view your reminders</h2>
+          <p className="font-mono text-xs text-parchment-700 leading-6">
+            Your journal data is private and<br />tied to your account.
+          </p>
+        </div>
+        <button onClick={() => signIn()} className="btn-primary px-8">Sign in</button>
+        <p className="font-mono text-[9px] text-parchment-800 tracking-widest uppercase">
+          Voice recording still works without signing in
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col flex-1 overflow-hidden">

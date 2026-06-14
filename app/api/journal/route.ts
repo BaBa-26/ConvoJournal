@@ -1,61 +1,73 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import type { AnalysisResult } from "@/types";
+import { requireAuth } from "@/lib/auth";
+import { JournalCreateSchema, validate } from "@/lib/validators";
+
+function safeParseDateOrThrow(s?: string): Date {
+  const d = s ? new Date(s) : new Date();
+  if (isNaN(d.getTime())) throw new Error("Invalid date");
+  return d;
+}
 
 export async function GET(req: NextRequest) {
+  const auth = await requireAuth();
+  if (auth instanceof NextResponse) return auth;
+
   try {
     const { searchParams } = new URL(req.url);
-    const limit = parseInt(searchParams.get("limit") ?? "30");
+    const rawLimit = parseInt(searchParams.get("limit") ?? "30", 10);
+    const limit = isNaN(rawLimit) ? 30 : Math.min(Math.max(rawLimit, 1), 100);
 
     const entries = await prisma.journalEntry.findMany({
+      where:   { userId: auth.userId },
       orderBy: { date: "desc" },
-      take: limit,
-      include: {
-        tasks: true,
-        reminders: true,
-      },
+      take:    limit,
+      include: { tasks: true, reminders: true },
     });
 
     return NextResponse.json(entries);
   } catch (error) {
-    console.error("GET /api/journal error:", error);
+    if (process.env.NODE_ENV !== "production") console.error("[journal GET]", error);
     return NextResponse.json({ error: "Failed to fetch entries" }, { status: 500 });
   }
 }
 
 export async function POST(req: NextRequest) {
+  const auth = await requireAuth();
+  if (auth instanceof NextResponse) return auth;
+
   try {
     const body = await req.json();
-    const { rawContent, analysis, date } = body as {
-      rawContent: string;
-      analysis: AnalysisResult;
-      date?: string;
-    };
+    const parsed = validate(JournalCreateSchema, body);
+    if (!parsed.ok) return NextResponse.json(parsed.error, { status: 400 });
 
-    if (!rawContent) {
-      return NextResponse.json({ error: "rawContent is required" }, { status: 400 });
+    const { rawContent, analysis, date } = parsed.data;
+
+    let entryDate: Date;
+    try {
+      entryDate = safeParseDateOrThrow(date);
+      entryDate.setHours(0, 0, 0, 0);
+    } catch {
+      return NextResponse.json({ error: "Invalid date" }, { status: 400 });
     }
 
-    const entryDate = date ? new Date(date) : new Date();
-    // Normalize to start of day
-    entryDate.setHours(0, 0, 0, 0);
-
     const entry = await prisma.journalEntry.upsert({
-      where: { date: entryDate },
+      where:  { userId_date: { userId: auth.userId, date: entryDate } },
       update: {
         rawContent,
         yesterday: analysis?.yesterday ?? null,
-        today: analysis?.today ?? null,
-        tomorrow: analysis?.tomorrow ?? null,
-        mood: analysis?.mood ?? null,
+        today:     analysis?.today     ?? null,
+        tomorrow:  analysis?.tomorrow  ?? null,
+        mood:      analysis?.mood      ?? null,
       },
       create: {
-        date: entryDate,
+        date:      entryDate,
         rawContent,
         yesterday: analysis?.yesterday ?? null,
-        today: analysis?.today ?? null,
-        tomorrow: analysis?.tomorrow ?? null,
-        mood: analysis?.mood ?? null,
+        today:     analysis?.today     ?? null,
+        tomorrow:  analysis?.tomorrow  ?? null,
+        mood:      analysis?.mood      ?? null,
+        userId:    auth.userId,
       },
     });
 
@@ -63,11 +75,12 @@ export async function POST(req: NextRequest) {
     if (analysis?.tasks?.length) {
       await prisma.task.createMany({
         data: analysis.tasks.map((t) => ({
-          title: t.title,
-          description: t.description ?? null,
-          dueDate: t.dueDate ? new Date(t.dueDate) : null,
-          priority: t.priority ?? "medium",
-          source: "journal",
+          title:          t.title,
+          description:    t.description ?? null,
+          dueDate:        t.dueDate ? new Date(t.dueDate) : null,
+          priority:       t.priority ?? "medium",
+          source:         "journal",
+          userId:         auth.userId,
           journalEntryId: entry.id,
         })),
       });
@@ -77,22 +90,23 @@ export async function POST(req: NextRequest) {
     if (analysis?.reminders?.length) {
       await prisma.reminder.createMany({
         data: analysis.reminders.map((r) => ({
-          title: r.title,
-          description: r.description ?? null,
-          eventDate: new Date(r.eventDate),
+          title:          r.title,
+          description:    r.description ?? null,
+          eventDate:      new Date(r.eventDate),
+          userId:         auth.userId,
           journalEntryId: entry.id,
         })),
       });
     }
 
     const full = await prisma.journalEntry.findUnique({
-      where: { id: entry.id },
+      where:   { id: entry.id },
       include: { tasks: true, reminders: true },
     });
 
     return NextResponse.json(full, { status: 201 });
   } catch (error) {
-    console.error("POST /api/journal error:", error);
+    if (process.env.NODE_ENV !== "production") console.error("[journal POST]", error);
     return NextResponse.json({ error: "Failed to save entry" }, { status: 500 });
   }
 }
