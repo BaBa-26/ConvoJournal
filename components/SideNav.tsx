@@ -1,0 +1,76 @@
+"use client";
+
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+
+const tabs = [
+  { href: "/",         shape: "circle",   label: "Today"    },
+  { href: "/journal",  shape: "r-square", label: "Journal"  },
+  { href: "/schedule", shape: "square",   label: "Calendar" },
+  { href: "/tasks",    shape: "diamond",  label: "Goals"    },
+];
+
+function NavIcon({ shape, active }: { shape: string; active: boolean }) {
+  const style: React.CSSProperties = {
+    display: "inline-block",
+    flexShrink: 0,
+    transition: "all 0.2s ease",
+    background: active ? "#c8a878" : "transparent",
+    border: active ? "none" : "1.6px solid #4a3c2e",
+  };
+  if (shape === "circle")   return <span style={{ ...style, width: 14, height: 14, borderRadius: "50%" }} />;
+  if (shape === "r-square") return <span style={{ ...style, width: 14, height: 14, borderRadius: 4 }} />;
+  if (shape === "square")   return <span style={{ ...style, width: 14, height: 14, borderRadius: 2 }} />;
+  return <span style={{ ...style, width: 10, height: 10, borderRadius: 2, transform: "rotate(45deg)" }} />;
+}
+
+export default function SideNav() {
+  const pathname = usePathname();
+
+  return (
+    <nav className="hidden md:flex flex-col w-48 shrink-0 h-screen sticky top-0 border-r border-ink-700 bg-ink-950">
+      {/* Wordmark */}
+      <div className="px-5 pt-8 pb-5">
+        <span className="font-display italic text-xl text-parchment-200 tracking-tight">
+          Progress
+        </span>
+      </div>
+
+      <div className="mx-4 border-t border-ink-700 mb-3" />
+
+      {/* Nav items */}
+      <div className="flex flex-col gap-0.5 px-2 flex-1">
+        {tabs.map(({ href, shape, label }) => {
+          const active = pathname === href;
+          return (
+            <Link
+              key={href}
+              href={href}
+              className={`
+                flex items-center gap-3 px-3 py-2.5 rounded-xl
+                transition-all duration-150
+                ${active
+                  ? "bg-ink-800 text-parchment-200"
+                  : "text-parchment-700 hover:text-parchment-400 hover:bg-ink-900"
+                }
+              `}
+            >
+              <NavIcon shape={shape} active={active} />
+              <span className={`font-mono text-[11px] uppercase tracking-[0.15em] ${
+                active ? "text-parchment-300" : "text-parchment-700"
+              }`}>
+                {label}
+              </span>
+            </Link>
+          );
+        })}
+      </div>
+
+      {/* Footer */}
+      <div className="mx-4 border-t border-ink-700 mt-3 mb-5" />
+      <p className="px-5 pb-6 font-mono text-[9px] text-parchment-800 uppercase tracking-widest">
+        v1.0
+      </p>
+    </nav>
+  );
+}

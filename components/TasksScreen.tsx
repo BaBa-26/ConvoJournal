@@ -233,7 +233,7 @@ export default function TasksScreen() {
   const pending = tasks.filter((t) => !t.completed).length;
 
   return (
-    <div className="flex flex-col flex-1 overflow-hidden">
+    <div className="flex flex-col flex-1 overflow-hidden animate-fade-in">
       {/* Header */}
       <header className="px-5 pt-safe pt-5 pb-4 flex-shrink-0">
         <div className="flex items-start justify-between">

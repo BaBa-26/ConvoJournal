@@ -578,7 +578,7 @@ export default function ScheduleScreen() {
 
   return (
     <>
-      <div className="flex flex-col flex-1 overflow-hidden">
+      <div className="flex flex-col flex-1 overflow-hidden animate-fade-in">
         {/* Header */}
         <header className="flex items-center justify-between px-5 pt-safe pt-5 pb-4 flex-shrink-0">
           <div>
