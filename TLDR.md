@@ -186,11 +186,12 @@ NEXT_PUBLIC_APP_URL=http://localhost:3000
 
 ### High Priority
 - [ ] **Journal history page** (`/journal`) — browse past entries by date, view parsed sections
-- [ ] **Swap local parser → Gemini Flash 2.5** for `/api/analyze`
-  - Install `@google/generative-ai`
-  - Add `GOOGLE_API_KEY` to `.env.example`
+- [ ] **Swap local parser → Gemini Flash 2.5** for `/api/analyze`-not now that i have a local parser that works decently, might iterate on it and only add gemini flash for mood detection or something specific instead of the whole parsing task
+  - Install `@google/generative-ai`- not needed now that i have a local parser that works decently, might iterate on it and only add gemini flash for mood detection or something specific instead of the whole parsing task
+  - Add `GOOGLE_API_KEY` to `.env.example`-same with this 
   - Update `app/api/analyze/route.ts` with structured prompt + JSON schema output
   - Expected gain: better mood detection, semantic section splitting, richer task context
+  -Actually deplying - setting upo data base - (supa bas/any free data base - and learn how to hos ton vercel or somthing - might be a bit of work but would be good to have cloud deploy and not rely on local sqlite for a journaling app)
 
 ### Near-Term
 - [ ] **Edit journal entries** — tap to revise a saved entry

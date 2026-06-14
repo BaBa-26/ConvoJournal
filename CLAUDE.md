@@ -1,8 +1,8 @@
-# ConvoJournal — Claude Code Instructions
+# Progress— Claude Code Instructions
 
 ## Project
 
-Mobile-first voice journaling PWA called **Murmur**. Users speak or type a daily brain-dump; the app parses it into Yesterday/Today/Tomorrow sections, extracts tasks + reminders, and persists everything to a local SQLite DB.
+Mobile-first voice journaling PWA called **Progress**. Users speak or type a daily brain-dump; the app parses it into Yesterday/Today/Tomorrow sections, extracts tasks + reminders, and persists everything to a local SQLite DB.
 
 ## Stack
 
@@ -11,7 +11,7 @@ Mobile-first voice journaling PWA called **Murmur**. Users speak or type a daily
 - **OpenAI Whisper** for voice transcription (server-side, `app/api/transcribe/route.ts`)
 - **Local regex parser** for journal analysis — `lib/parser.ts` (no AI cost, but Gemini Flash 2.5 swap is the next priority)
 - **Custom autocomplete** — Trie + bigram N-gram in `lib/autocomplete.ts`, persists to localStorage
-
+----- will be using gemini basic models for early developemt i thin kbut wil see hwo it goes for now 
 ## Key Files
 
 | File | Role |
