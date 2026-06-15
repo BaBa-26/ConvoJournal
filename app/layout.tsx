@@ -18,13 +18,13 @@ const dmMono = DM_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Murmur",
+  title: "Progress",
   description: "A quiet place for your thoughts",
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
-    title: "Murmur",
+    title: "Progress",
   },
 };
 

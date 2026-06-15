@@ -7,6 +7,7 @@ import Waveform from "./Waveform";
 import { useRecorder } from "@/hooks/useRecorder";
 import { buildAutocompleteEngine, type AutocompleteEngine } from "@/lib/autocomplete";
 import type { RecordingPhase, ParsedEntry, JournalEntry } from "@/types";
+import { appendDemoJournalEntry, loadDemoState } from "@/lib/demoData";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -178,7 +179,7 @@ function IdlePhase({
           >
             <div className="flex items-center justify-between gap-2 mb-1.5">
               <span className="font-mono text-[10px] text-parchment-700 uppercase tracking-wider">
-                {format(parseISO(e.date), "EEE, MMM d")}
+                {format(parseISO(e.date), "EEE, MMM d").toUpperCase()}
               </span>
               {e.mood && (
                 <span className="font-mono text-[9px] text-gold/70 border border-gold/20 rounded-full px-2 py-0.5 flex-shrink-0">
@@ -187,23 +188,18 @@ function IdlePhase({
               )}
             </div>
             <p className="font-display italic text-sm text-parchment-300 leading-relaxed line-clamp-2">
-              {e.rawContent.slice(0, 130)}
-              {e.rawContent.length > 130 ? "…" : ""}
+              {(e.yesterday || e.today || e.tomorrow || e.rawContent).slice(0, 130)}
+              {(e.yesterday || e.today || e.tomorrow || e.rawContent).length > 130 ? "…" : ""}
             </p>
-            {((e.tasks?.length ?? 0) > 0 || (e.reminders?.length ?? 0) > 0) && (
-              <div className="flex gap-3 mt-2">
-                {(e.tasks?.length ?? 0) > 0 && (
-                  <span className="font-mono text-[9px] text-parchment-700">
-                    {e.tasks!.length} task{e.tasks!.length > 1 ? "s" : ""}
-                  </span>
-                )}
-                {(e.reminders?.length ?? 0) > 0 && (
-                  <span className="font-mono text-[9px] text-parchment-700">
-                    {e.reminders!.length} reminder{e.reminders!.length > 1 ? "s" : ""}
-                  </span>
-                )}
-              </div>
-            )}
+            <div className="flex gap-3 mt-2 font-mono text-[9px] text-parchment-700">
+              <span>
+                {e.tasks?.length ?? 0} task{(e.tasks?.length ?? 0) === 1 ? "" : "s"}
+              </span>
+              <span>·</span>
+              <span>
+                {e.reminders?.length ?? 0} reminder{(e.reminders?.length ?? 0) === 1 ? "" : "s"}
+              </span>
+            </div>
           </button>
         ))}
       </div>
@@ -683,11 +679,16 @@ export default function JournalScreen() {
 
   // Fetch journal history — refresh after a new entry is saved
   useEffect(() => {
+    if (!session) {
+      setEntries(loadDemoState().entries);
+      return;
+    }
+
     fetch("/api/journal")
       .then(r => r.json())
       .then(data => { if (Array.isArray(data)) setEntries(data); })
       .catch(() => {});
-  }, [saved]);
+  }, [saved, session]);
 
   // When recorder finishes transcribing → analyze
   useEffect(() => {
@@ -743,6 +744,12 @@ export default function JournalScreen() {
     if (!activeContent) return;
     setSaving(true);
     try {
+      if (!session) {
+        appendDemoJournalEntry(activeContent, parsed ?? { tasks: [], reminders: [] });
+        setEntries(loadDemoState().entries);
+        setSaved(true);
+        return;
+      }
       await fetch("/api/journal", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -756,7 +763,7 @@ export default function JournalScreen() {
     } finally {
       setSaving(false);
     }
-  }, [activeContent, parsed]);
+  }, [activeContent, parsed, session]);
 
   const handleDiscard = useCallback(() => {
     reset();
@@ -856,7 +863,7 @@ export default function JournalScreen() {
             onSave={handleSave}
             onDiscard={handleDiscard}
             saving={saving}
-            requiresAuth={!session}
+            requiresAuth={false}
           />
         )}
       </div>

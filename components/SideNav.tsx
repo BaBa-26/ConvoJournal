@@ -68,9 +68,18 @@ export default function SideNav() {
 
       {/* Footer */}
       <div className="mx-4 border-t border-ink-700 mt-3 mb-5" />
-      <p className="px-5 pb-6 font-mono text-[9px] text-parchment-800 uppercase tracking-widest">
-        v1.0
-      </p>
+      <div className="px-3 pb-5 space-y-2">
+        <Link
+          href="/settings"
+          className="flex items-center justify-between px-3 py-2 rounded-xl border border-ink-800 text-parchment-700 hover:text-parchment-300 hover:border-ink-700 transition-colors"
+        >
+          <span className="font-mono text-[10px] uppercase tracking-[0.15em]">Settings</span>
+          <span className="text-parchment-800">→</span>
+        </Link>
+        <p className="px-2 pt-1 font-mono text-[9px] text-parchment-800 uppercase tracking-widest">
+          v1.0
+        </p>
+      </div>
     </nav>
   );
 }

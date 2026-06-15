@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { format } from "date-fns";
 import { useSession, signIn } from "next-auth/react";
 import type { Task, TaskFilter } from "@/types";
+import { loadDemoState, updateDemoState } from "@/lib/demoData";
 
 // ─── Shared auth gate ─────────────────────────────────────────────────────────
 
@@ -215,15 +216,28 @@ export default function TasksScreen() {
   const [showAdd, setShowAdd]   = useState(false);
 
   const fetchTasks = useCallback(async () => {
-    if (!session) { setLoading(false); return; }
+    if (status === "loading") return;
+    if (!session) {
+      setTasks(loadDemoState().tasks);
+      setLoading(false);
+      return;
+    }
     const res = await fetch("/api/tasks");
     if (res.ok) setTasks(await res.json());
     setLoading(false);
-  }, [session]);
+  }, [session, status]);
 
   useEffect(() => { fetchTasks(); }, [fetchTasks]);
 
   const handleToggle = async (id: string, completed: boolean) => {
+    if (!session) {
+      setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, completed } : t)));
+      updateDemoState((state) => ({
+        ...state,
+        tasks: state.tasks.map((t) => (t.id === id ? { ...t, completed } : t)),
+      }));
+      return;
+    }
     const res = await fetch(`/api/tasks/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -236,11 +250,38 @@ export default function TasksScreen() {
   };
 
   const handleDelete = async (id: string) => {
+    if (!session) {
+      setTasks((prev) => prev.filter((t) => t.id !== id));
+      updateDemoState((state) => ({
+        ...state,
+        tasks: state.tasks.filter((t) => t.id !== id),
+      }));
+      return;
+    }
     const res = await fetch(`/api/tasks/${id}`, { method: "DELETE" });
     if (res.ok) setTasks((prev) => prev.filter((t) => t.id !== id));
   };
 
   const handleAdd = async (data: Partial<Task>) => {
+    if (!session) {
+      const now = new Date().toISOString();
+      const task: Task = {
+        id: `demo-task-${Date.now()}`,
+        title: data.title ?? "Untitled task",
+        description: data.description ?? null,
+        dueDate: data.dueDate ?? null,
+        completed: false,
+        priority: data.priority ?? "medium",
+        source: "manual",
+        journalEntryId: null,
+        createdAt: now,
+        updatedAt: now,
+      };
+      setTasks((prev) => [task, ...prev]);
+      updateDemoState((state) => ({ ...state, tasks: [task, ...state.tasks] }));
+      setShowAdd(false);
+      return;
+    }
     const res = await fetch("/api/tasks", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -261,7 +302,7 @@ export default function TasksScreen() {
   const pending = tasks.filter((t) => !t.completed).length;
 
   // ── Auth gate ──────────────────────────────────────────
-  if (status !== "loading" && !session) {
+  if (false && status !== "loading" && !session) {
     return <AuthGate feature="tasks" />;
   }
 

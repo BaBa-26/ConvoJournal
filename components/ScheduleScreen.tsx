@@ -6,7 +6,9 @@ import {
   isSameDay, isSameMonth, isToday, addMonths, subMonths,
   startOfWeek, endOfWeek, parseISO, isBefore, startOfDay,
 } from "date-fns";
+import { useSession } from "next-auth/react";
 import type { Task, Reminder } from "@/types";
+import { loadDemoState, updateDemoState } from "@/lib/demoData";
 
 // ─── Priority colours ──────────────────────────────────────────────────────────
 
@@ -492,6 +494,7 @@ function UpcomingFeed({
 // ─── Main component ────────────────────────────────────────────────────────────
 
 export default function ScheduleScreen() {
+  const { data: session, status } = useSession();
   const [month,       setMonth]       = useState(new Date());
   const [selectedDay, setSelectedDay] = useState(new Date());
   const [tasks,       setTasks]       = useState<Task[]>([]);
@@ -500,6 +503,14 @@ export default function ScheduleScreen() {
   const [modalDay,    setModalDay]    = useState<Date | null>(null);
 
   const fetchAll = useCallback(async () => {
+    if (status === "loading") return;
+    if (!session) {
+      const demo = loadDemoState();
+      setTasks(demo.tasks);
+      setReminders(demo.reminders);
+      setLoading(false);
+      return;
+    }
     const [t, r] = await Promise.all([
       fetch("/api/tasks").then(r => r.json()),
       fetch("/api/reminders").then(r => r.json()),
@@ -507,28 +518,46 @@ export default function ScheduleScreen() {
     setTasks(Array.isArray(t) ? t : []);
     setReminders(Array.isArray(r) ? r : []);
     setLoading(false);
-  }, []);
+  }, [session, status]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
   const handleToggleTask = useCallback(async (id: string, completed: boolean) => {
+    if (!session) {
+      setTasks(prev => prev.map(t => t.id === id ? { ...t, completed } : t));
+      updateDemoState((state) => ({
+        ...state,
+        tasks: state.tasks.map((t) => (t.id === id ? { ...t, completed } : t)),
+      }));
+      return;
+    }
     setTasks(prev => prev.map(t => t.id === id ? { ...t, completed } : t));
     await fetch(`/api/tasks/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ completed }),
     });
-  }, []);
+  }, [session]);
 
   const handleDeleteTask = useCallback(async (id: string) => {
+    if (!session) {
+      setTasks(prev => prev.filter(t => t.id !== id));
+      updateDemoState((state) => ({ ...state, tasks: state.tasks.filter((t) => t.id !== id) }));
+      return;
+    }
     setTasks(prev => prev.filter(t => t.id !== id));
     await fetch(`/api/tasks/${id}`, { method: "DELETE" });
-  }, []);
+  }, [session]);
 
   const handleDeleteReminder = useCallback(async (id: string) => {
+    if (!session) {
+      setReminders(prev => prev.filter(r => r.id !== id));
+      updateDemoState((state) => ({ ...state, reminders: state.reminders.filter((r) => r.id !== id) }));
+      return;
+    }
     setReminders(prev => prev.filter(r => r.id !== id));
     await fetch(`/api/reminders/${id}`, { method: "DELETE" });
-  }, []);
+  }, [session]);
 
   const handleSelectDay = useCallback((day: Date) => {
     setSelectedDay(day);
@@ -540,6 +569,38 @@ export default function ScheduleScreen() {
     type: "task" | "reminder";
     title: string; date: string; time: string; priority: string; description: string;
   }) => {
+    if (!session) {
+      const now = new Date().toISOString();
+      if (type === "task") {
+        const task: Task = {
+          id: `demo-task-${Date.now()}`,
+          title,
+          description: description || null,
+          dueDate: date ? new Date(date + "T12:00:00").toISOString() : null,
+          completed: false,
+          priority: priority as Task["priority"],
+          source: "manual",
+          journalEntryId: null,
+          createdAt: now,
+          updatedAt: now,
+        };
+        setTasks(prev => [...prev, task]);
+        updateDemoState((state) => ({ ...state, tasks: [...state.tasks, task] }));
+      } else {
+        const reminder: Reminder = {
+          id: `demo-reminder-${Date.now()}`,
+          title,
+          description: description || null,
+          eventDate: new Date(date + "T" + time + ":00").toISOString(),
+          reminded: false,
+          journalEntryId: null,
+          createdAt: now,
+        };
+        setReminders(prev => [...prev, reminder]);
+        updateDemoState((state) => ({ ...state, reminders: [...state.reminders, reminder] }));
+      }
+      return;
+    }
     if (type === "task") {
       const res = await fetch("/api/tasks", {
         method: "POST",
@@ -566,7 +627,7 @@ export default function ScheduleScreen() {
       const reminder = await res.json();
       setReminders(prev => [...prev, reminder]);
     }
-  }, []);
+  }, [session]);
 
   if (loading) {
     return (

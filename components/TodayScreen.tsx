@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { format, isToday, isPast, parseISO } from "date-fns";
 import type { Task, Reminder } from "@/types";
 
@@ -41,9 +41,38 @@ export default function TodayScreen() {
 
   const todayReminders = reminders.filter(r => isToday(parseISO(r.eventDate)));
 
+  const agendaItems = useMemo(() => {
+    const items = [
+      ...todayReminders.map((reminder) => ({
+        id: reminder.id,
+        kind: "reminder" as const,
+        date: parseISO(reminder.eventDate),
+        title: reminder.title,
+      })),
+      ...dueTodayOrOverdue.map((task) => {
+        const dueDate = parseISO(task.dueDate!);
+        return {
+          id: task.id,
+          kind: "task" as const,
+          date: dueDate,
+          title: task.title,
+          priority: task.priority,
+          overdue: isPast(dueDate) && !isToday(dueDate),
+        };
+      }),
+    ];
+
+    return items.sort((a, b) => {
+      const delta = a.date.getTime() - b.date.getTime();
+      if (delta !== 0) return delta;
+      if (a.kind === b.kind) return 0;
+      return a.kind === "reminder" ? -1 : 1;
+    });
+  }, [dueTodayOrOverdue, todayReminders]);
+
   const pendingCount = tasks.filter(t => !t.completed).length;
 
-  const hasItems = dueTodayOrOverdue.length > 0 || todayReminders.length > 0;
+  const hasItems = agendaItems.length > 0;
 
   return (
     <div className="flex flex-col flex-1 overflow-hidden animate-fade-in">
@@ -75,30 +104,25 @@ export default function TodayScreen() {
             </div>
           ) : (
             <div className="flex flex-col gap-2">
-              {todayReminders.map(r => (
+              {agendaItems.map((item) => (
                 <div
-                  key={r.id}
+                  key={item.kind === "reminder" ? `reminder-${item.id}` : `task-${item.id}`}
                   className="flex items-start gap-3 bg-ink-900 border border-ink-700 rounded-xl px-4 py-3"
                 >
-                  <span className="font-mono text-[10px] text-gold flex-shrink-0 mt-0.5 w-14">
-                    {format(parseISO(r.eventDate), "h:mm a")}
-                  </span>
-                  <p className="font-mono text-sm text-parchment-300">{r.title}</p>
-                </div>
-              ))}
-              {dueTodayOrOverdue.map(t => (
-                <div
-                  key={t.id}
-                  className="flex items-start gap-3 bg-ink-900 border border-ink-700 rounded-xl px-4 py-3"
-                >
-                  <span
-                    className="mt-1.5 w-2 h-2 rounded-full flex-shrink-0"
-                    style={{ background: PRIORITY_COLORS[t.priority] ?? PRIORITY_COLORS.medium }}
-                  />
+                  {item.kind === "reminder" ? (
+                    <span className="font-mono text-[10px] text-gold flex-shrink-0 mt-0.5 w-14">
+                      {format(item.date, "h:mm a")}
+                    </span>
+                  ) : (
+                    <span
+                      className="mt-1.5 w-2 h-2 rounded-full flex-shrink-0"
+                      style={{ background: PRIORITY_COLORS[item.priority] ?? PRIORITY_COLORS.medium }}
+                    />
+                  )}
                   <div className="flex-1 min-w-0">
-                    <p className="font-mono text-sm text-parchment-200">{t.title}</p>
-                    {t.dueDate && isPast(parseISO(t.dueDate)) && !isToday(parseISO(t.dueDate)) && (
-                      <span className="inline-block font-mono text-[9px] uppercase tracking-wider text-priority-high mt-1">
+                    <p className="font-mono text-sm text-parchment-300">{item.title}</p>
+                    {item.kind === "task" && item.overdue && (
+                      <span className="inline-block mt-1 font-mono text-[9px] uppercase tracking-wider text-priority-high">
                         overdue
                       </span>
                     )}
@@ -147,6 +171,13 @@ export default function TodayScreen() {
             )}
           </Link>
         </div>
+
+        <Link
+          href="/settings"
+          className="font-mono text-[10px] text-parchment-700 uppercase tracking-[0.18em] text-center hover:text-parchment-500 transition-colors"
+        >
+          profile & settings →
+        </Link>
 
       </div>
     </div>

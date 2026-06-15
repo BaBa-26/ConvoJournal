@@ -6,6 +6,7 @@ import {
 } from "date-fns";
 import { useSession, signIn } from "next-auth/react";
 import type { Reminder } from "@/types";
+import { loadDemoState, updateDemoState } from "@/lib/demoData";
 
 // ─── Reminder card ────────────────────────────────────────────────────────────
 
@@ -123,15 +124,37 @@ export default function RemindersScreen() {
   const [showAdd, setShowAdd]     = useState(false);
 
   const fetchReminders = useCallback(async () => {
-    if (!session) { setLoading(false); return; }
+    if (status === "loading") return;
+    if (!session) {
+      setReminders(loadDemoState().reminders);
+      setLoading(false);
+      return;
+    }
     const res = await fetch("/api/reminders");
     if (res.ok) setReminders(await res.json());
     setLoading(false);
-  }, [session]);
+  }, [session, status]);
 
   useEffect(() => { fetchReminders(); }, [fetchReminders]);
 
   const handleAdd = async (data: Partial<Reminder>) => {
+    if (!session) {
+      const reminder: Reminder = {
+        id: `demo-reminder-${Date.now()}`,
+        title: data.title ?? "Untitled reminder",
+        description: data.description ?? null,
+        eventDate: data.eventDate ?? new Date().toISOString(),
+        reminded: false,
+        journalEntryId: null,
+        createdAt: new Date().toISOString(),
+      };
+      setReminders((prev) =>
+        [...prev, reminder].sort((a, b) => new Date(a.eventDate).getTime() - new Date(b.eventDate).getTime())
+      );
+      updateDemoState((state) => ({ ...state, reminders: [...state.reminders, reminder] }));
+      setShowAdd(false);
+      return;
+    }
     const res = await fetch("/api/reminders", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -152,7 +175,7 @@ export default function RemindersScreen() {
   const past     = reminders.filter((r) => isPast(new Date(r.eventDate)) && !isToday(new Date(r.eventDate)));
 
   // ── Auth gate ──────────────────────────────────────────
-  if (status !== "loading" && !session) {
+  if (false && status !== "loading" && !session) {
     return (
       <div className="flex flex-col items-center justify-center flex-1 gap-6 px-8">
         <div className="text-center space-y-2">
