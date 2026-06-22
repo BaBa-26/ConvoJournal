@@ -35,3 +35,8 @@ npm-debug.log*
 .vscode/
 .idea/
 *.swp
+
+# Python (whisper-service)
+whisper-service/venv/
+whisper-service/__pycache__/
+*.pyc

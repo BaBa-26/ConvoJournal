@@ -8,10 +8,12 @@ from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI(title="Whisper Transcription Service")
 
+ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000").split(",")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
-    allow_methods=["POST"],
+    allow_origins=ALLOWED_ORIGINS,
+    allow_methods=["POST", "GET"],
     allow_headers=["*"],
 )
 
