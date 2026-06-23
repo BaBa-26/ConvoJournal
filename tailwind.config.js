@@ -8,6 +8,21 @@ module.exports = {
   theme: {
     extend: {
       colors: {
+        // shadcn-compatible tokens (CSS variable driven, opacity-modifier safe)
+        border: "hsl(var(--border) / <alpha-value>)",
+        card: {
+          DEFAULT: "hsl(var(--card) / <alpha-value>)",
+          foreground: "hsl(var(--card-foreground) / <alpha-value>)",
+        },
+        muted: {
+          DEFAULT: "hsl(var(--muted) / <alpha-value>)",
+          foreground: "hsl(var(--muted-foreground) / <alpha-value>)",
+        },
+        foreground: "hsl(var(--foreground) / <alpha-value>)",
+        primary: {
+          DEFAULT: "hsl(var(--primary) / <alpha-value>)",
+          foreground: "hsl(var(--primary-foreground) / <alpha-value>)",
+        },
         // Charcoal backgrounds
         ink: {
           950: "#0f0e0b",

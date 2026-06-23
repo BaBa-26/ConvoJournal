@@ -2,6 +2,19 @@
 @tailwind components;
 @tailwind utilities;
 
+/* shadcn-compatible CSS variables — mapped to the ink/parchment/gold palette */
+:root {
+  --background: 33 16% 6%;           /* ink-950  #0f0e0b */
+  --foreground: 38 50% 80%;          /* parchment #e8d5b0 */
+  --card: 33 11% 9%;                 /* ink-900  #1a1815 */
+  --card-foreground: 38 50% 80%;
+  --border: 30 8% 17%;               /* ink-700  #302d29 */
+  --muted: 18 7% 13%;                /* ink-800  #252220 */
+  --muted-foreground: 28 15% 47%;    /* parchment-600 #8a7a68 */
+  --primary: 36 44% 63%;             /* gold     #c8a878 */
+  --primary-foreground: 33 16% 6%;   /* ink-950  #0f0e0b */
+}
+
 @layer base {
   html {
     -webkit-tap-highlight-color: transparent;
