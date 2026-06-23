@@ -1,7 +1,7 @@
 {
-  "name": "Murmur",
-  "short_name": "Murmur",
-  "description": "A quiet place for your thoughts",
+  "name": "Progress",
+  "short_name": "Progress",
+  "description": "Your progress, mapped how you want it",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#0f0e0b",

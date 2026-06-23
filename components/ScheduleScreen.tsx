@@ -242,7 +242,7 @@ function AddItemModal({
                             border transition-all focus:outline-none`}
                 style={priority === p
                   ? { borderColor: PC[p] + "80", color: PC[p], background: PC[p] + "12" }
-                  : { borderColor: "#2a2a24", color: "#5a5248" }}
+                  : { borderColor: "#302d29", color: "#6a5a4a" }}
               >
                 {p}
               </button>

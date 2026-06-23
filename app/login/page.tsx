@@ -52,9 +52,9 @@ export default function LoginPage() {
       <div className="w-full max-w-sm space-y-8">
         {/* Wordmark */}
         <div className="text-center space-y-2">
-          <h1 className="font-display text-4xl text-parchment-200">murmur</h1>
+          <h1 className="font-display text-4xl text-parchment-200">Progress</h1>
           <p className="font-mono text-xs text-parchment-700 tracking-[0.2em] uppercase">
-            a quiet place for your thoughts
+            your progress, mapped how you want it
           </p>
         </div>
 

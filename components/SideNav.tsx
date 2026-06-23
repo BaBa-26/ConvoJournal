@@ -29,11 +29,14 @@ export default function SideNav() {
 
   return (
     <nav className="hidden md:flex flex-col w-48 shrink-0 h-screen sticky top-0 border-r border-ink-700 bg-ink-950">
-      {/* Wordmark */}
+      {/* Wordmark — links to landing page */}
       <div className="px-5 pt-8 pb-5">
-        <span className="font-display italic text-xl text-parchment-200 tracking-tight">
+        <Link
+          href="/landing"
+          className="font-display italic text-xl text-parchment-200 tracking-tight hover:text-gold transition-colors duration-150"
+        >
           Progress
-        </span>
+        </Link>
       </div>
 
       <div className="mx-4 border-t border-ink-700 mb-3" />

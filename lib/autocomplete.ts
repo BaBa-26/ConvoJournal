@@ -101,7 +101,7 @@ function spellCorrect(word: string, wordList: string[], maxDist = 2): string[] {
 
 // ─── N-Gram language model ─────────────────────────────────────────────────────
 
-const LS_KEY = "murmur_autocomplete_v1";
+const LS_KEY = "progress_autocomplete_v1";
 
 type NMap = Record<string, Record<string, number>>;
 
