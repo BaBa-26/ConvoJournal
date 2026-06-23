@@ -21,6 +21,7 @@
   "license": "ISC",
   "dependencies": {
     "@next-auth/prisma-adapter": "^1.0.7",
+    "@paper-design/shaders-react": "^0.0.76",
     "@prisma/client": "^5.22.0",
     "@types/bcryptjs": "^2.4.6",
     "@types/node": "^25.9.2",
