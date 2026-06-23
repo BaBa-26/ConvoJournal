@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import Groq from "groq-sdk";
 
 const MAX_BYTES = 25 * 1024 * 1024; // 25 MB
 
@@ -12,7 +13,7 @@ const ALLOWED_MIME: Record<string, string> = {
   "audio/webm;codecs=opus": "webm",
 };
 
-const WHISPER_SERVICE_URL = process.env.WHISPER_SERVICE_URL ?? "http://localhost:8000";
+const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
 // Public endpoint — no auth required (enables try-mode)
 // Rate limiting is handled by middleware (5 req/min per IP)
@@ -44,28 +45,15 @@ export async function POST(req: NextRequest) {
     }
 
     const arrayBuffer = await audioBlob.arrayBuffer();
-    const outForm = new FormData();
-    outForm.append(
-      "audio",
-      new Blob([arrayBuffer], { type: mimeType }),
-      `recording.${ext}`
-    );
+    const file = new File([arrayBuffer], `recording.${ext}`, { type: mimeType });
 
-    const upstream = await fetch(`${WHISPER_SERVICE_URL}/transcribe`, {
-      method: "POST",
-      body: outForm,
+    const transcription = await groq.audio.transcriptions.create({
+      file,
+      model: "whisper-large-v3-turbo",
+      response_format: "json",
     });
 
-    if (!upstream.ok) {
-      const detail = await upstream.text().catch(() => "unknown error");
-      if (process.env.NODE_ENV !== "production") {
-        console.error("[transcribe] whisper-service error:", upstream.status, detail);
-      }
-      return NextResponse.json({ error: "Transcription failed" }, { status: 500 });
-    }
-
-    const { text } = await upstream.json();
-    return NextResponse.json({ text });
+    return NextResponse.json({ text: transcription.text });
   } catch (error) {
     if (process.env.NODE_ENV !== "production") console.error("[transcribe]", error);
     return NextResponse.json({ error: "Transcription failed" }, { status: 500 });
