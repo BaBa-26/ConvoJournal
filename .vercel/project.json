@@ -1,0 +1,16 @@
+{
+  "projectId": "prj_h4AnAwKc2uDl5AaXMsKYUJ4ORhUg",
+  "orgId": "team_MG3FjRZ5ZxCILzzjSvsogG8t",
+  "projectName": "progress",
+  "settings": {
+    "createdAt": 1782108392590,
+    "framework": "nextjs",
+    "devCommand": null,
+    "installCommand": null,
+    "buildCommand": null,
+    "outputDirectory": null,
+    "rootDirectory": null,
+    "directoryListing": false,
+    "nodeVersion": "24.x"
+  }
+}
