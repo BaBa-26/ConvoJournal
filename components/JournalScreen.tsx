@@ -690,20 +690,6 @@ export default function JournalScreen() {
       .catch(() => {});
   }, [saved, session]);
 
-  // When recorder finishes transcribing → analyze
-  useEffect(() => {
-    if (recState === "idle" && transcript && phase === "analyzing") {
-      setActiveContent(transcript);
-      runAnalysis(transcript);
-    }
-  }, [recState, transcript, phase, runAnalysis]);
-
-  // Sync phase with recorder state
-  useEffect(() => {
-    if (recState === "recording")    setPhase("recording");
-    if (recState === "transcribing") setPhase("analyzing");
-  }, [recState]);
-
   const runAnalysis = useCallback(async (text: string) => {
     setPhase("analyzing");
     setAnalyzeError(null);
@@ -723,6 +709,20 @@ export default function JournalScreen() {
       setPhase("review");
     }
   }, []);
+
+  // Sync phase with recorder state
+  useEffect(() => {
+    if (recState === "recording")    setPhase("recording");
+    if (recState === "transcribing") setPhase("analyzing");
+  }, [recState]);
+
+  // When recorder finishes transcribing → analyze
+  useEffect(() => {
+    if (recState === "idle" && transcript && phase === "analyzing") {
+      setActiveContent(transcript);
+      runAnalysis(transcript);
+    }
+  }, [recState, transcript, phase, runAnalysis]);
 
   const handleStart = useCallback(async () => {
     setPhase("recording");
