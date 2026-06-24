@@ -692,12 +692,11 @@ export default function JournalScreen() {
 
   // When recorder finishes transcribing → analyze
   useEffect(() => {
-    if (recState === "idle" && transcript && phase === "recording") {
+    if (recState === "idle" && transcript && phase === "analyzing") {
       setActiveContent(transcript);
       runAnalysis(transcript);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [recState, transcript]);
+  }, [recState, transcript, phase, runAnalysis]);
 
   // Sync phase with recorder state
   useEffect(() => {
