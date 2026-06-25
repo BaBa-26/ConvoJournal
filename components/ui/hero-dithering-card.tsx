@@ -2,6 +2,7 @@
 
 import { ArrowRight } from "lucide-react"
 import { useState, Suspense, lazy } from "react"
+import { useRouter } from "next/navigation"
 
 const Dithering = lazy(() =>
   import("@paper-design/shaders-react").then((mod) => ({ default: mod.Dithering }))
@@ -13,6 +14,7 @@ interface CTASectionProps {
   subheadline?: string
   description?: string
   ctaLabel?: string
+  ctaHref?: string
   onCtaClick?: () => void
 }
 
@@ -22,9 +24,15 @@ export function CTASection({
   subheadline = "delivered perfectly.",
   description = "Join 2,847 founders using the only AI that understands the nuance of your voice. Clean, precise, and uniquely yours.",
   ctaLabel = "Start Typing",
+  ctaHref,
   onCtaClick,
 }: CTASectionProps) {
   const [isHovered, setIsHovered] = useState(false)
+  const router = useRouter()
+  const handleClick = () => {
+    if (onCtaClick) { onCtaClick(); return; }
+    if (ctaHref) router.push(ctaHref);
+  }
 
   return (
     <section className="py-12 w-full flex justify-center items-center px-4 md:px-6">
@@ -67,7 +75,7 @@ export function CTASection({
             </p>
 
             <button
-              onClick={onCtaClick}
+              onClick={handleClick}
               className="group relative inline-flex h-14 items-center justify-center gap-3 overflow-hidden rounded-full bg-primary px-12 text-base font-medium text-primary-foreground transition-all duration-300 hover:bg-primary/90 hover:scale-105 active:scale-95 hover:ring-4 hover:ring-primary/20"
             >
               <span className="relative z-10">{ctaLabel}</span>

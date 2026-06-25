@@ -48,17 +48,20 @@ model VerificationToken {
 }
 
 model User {
-  id            String         @id @default(cuid())
-  name          String?
-  email         String?        @unique
-  emailVerified DateTime?
-  image         String?
-  createdAt     DateTime       @default(now())
-  accounts      Account[]
-  sessions      Session[]
-  entries       JournalEntry[]
-  tasks         Task[]
-  reminders     Reminder[]
+  id             String         @id @default(cuid())
+  name           String?
+  email          String?        @unique
+  emailVerified  DateTime?
+  image          String?
+  createdAt      DateTime       @default(now())
+  onboarded      Boolean        @default(false)
+  displayName    String?
+  journalMode    String?        // "voice" | "text" | "both"
+  accounts       Account[]
+  sessions       Session[]
+  entries        JournalEntry[]
+  tasks          Task[]
+  reminders      Reminder[]
 }
 
 // ─── App models ───────────────────────────────────────────────────────────────

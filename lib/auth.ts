@@ -47,9 +47,14 @@ export const authOptions: NextAuthOptions = {
   session: { strategy: "database" },
 
   callbacks: {
-    // Attach user.id to the session so API routes can use it
     session({ session, user }) {
-      if (session.user) session.user.id = user.id;
+      if (session.user) {
+        session.user.id = user.id;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const u = user as any;
+        session.user.onboarded   = u.onboarded   ?? false;
+        session.user.displayName = u.displayName ?? null;
+      }
       return session;
     },
   },

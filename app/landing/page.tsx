@@ -31,8 +31,8 @@ export default function LandingPage() {
       <BackgroundPaths
         title="Your progress mapped how you want it"
         subtitle="Speak your daily brain-dump. Progress turns it into tasks, reminders, and a timeline — automatically."
-        ctaLabel="Write your first entry"
-        ctaHref="/journal"
+        ctaLabel="Get started free"
+        ctaHref="/login"
       />
 
       {/* ── Features ─────────────────────────────────────────── */}
@@ -72,6 +72,7 @@ export default function LandingPage() {
           subheadline="captured in seconds."
           description="Most journaling apps demand effort. Progress only needs your voice. Speak, done."
           ctaLabel="Start for free"
+          ctaHref="/login"
         />
       </div>
 
