@@ -22,7 +22,7 @@ npm run db:studio    # Prisma Studio GUI
 - **Prisma 5 + Neon Postgres** (prod) — `DATABASE_URL` (pooled) + `DIRECT_URL` (migrations)
 - **NextAuth v4** — Google OAuth + dev credentials provider (dev-only)
 - **Groq** `whisper-large-v3-turbo` via `groq-sdk` for transcription — `GROQ_API_KEY` required
-- **Gemini 1.5 Flash** via `@google/generative-ai` for journal analysis — `GEMINI_API_KEY` required; falls back to `lib/parser.ts` regex on error
+- **Gemini 2.5 Flash** via `@google/generative-ai` for journal analysis — `GEMINI_API_KEY` required; falls back to `lib/parser.ts` regex on error
 - Custom Trie + bigram N-gram autocomplete (`lib/autocomplete.ts`) persisted to localStorage
 
 ## Architecture
@@ -36,7 +36,7 @@ npm run db:studio    # Prisma Studio GUI
 - Session strategy is `"database"`. `user.id` is injected into the session via the `session` callback.
 
 ### Data flow — journal entry
-`JournalScreen` (5-phase state machine) → `POST /api/transcribe` (Groq Whisper, no auth) → `POST /api/analyze` (Gemini 1.5 Flash, no auth required but injects pending-task context if session exists) → `POST /api/journal` (auth required, upserts by `userId + date`). Tasks and reminders are created in the same `POST /api/journal` call.
+`JournalScreen` (5-phase state machine) → `POST /api/transcribe` (Groq Whisper, no auth) → `POST /api/analyze` (Gemini 2.5 Flash, no auth required but injects pending-task context if session exists) → `POST /api/journal` (auth required, upserts by `userId + date`). Tasks and reminders are created in the same `POST /api/journal` call.
 
 ### Unauthenticated try-mode
 `lib/demoData.ts` seeds `localStorage` (key: `progress-demo-state-v1`) with fake entries/tasks/reminders. `JournalScreen`, `TasksScreen`, and `RemindersScreen` read from localStorage when no session exists. Saving prompts "Sign in to save".
@@ -55,7 +55,7 @@ npm run db:studio    # Prisma Studio GUI
 | `components/JournalScreen.tsx` | 5-phase state machine + entry history (640+ lines — avoid adding top-level state) |
 | `components/TodayScreen.tsx` | Home dashboard — greeting, agenda, quick links |
 | `app/api/transcribe/route.ts` | Groq Whisper (public) — MIME allowlist, 25 MB cap |
-| `lib/gemini.ts` | Gemini 1.5 Flash client — `analyzeWithGemini()`, prompt injection defense, safety settings, fallback-safe |
+| `lib/gemini.ts` | Gemini 2.5 Flash client — `analyzeWithGemini()`, prompt injection defense, safety settings, fallback-safe |
 | `app/api/analyze/route.ts` | Gemini analysis with regex fallback; injects pending tasks + timezone as context for auth'd users |
 | `middleware.ts` | Rate limiting + CSP/HSTS/security headers |
 | `prisma/schema.prisma` | User, JournalEntry, Task, Reminder + NextAuth models |
