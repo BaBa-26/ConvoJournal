@@ -697,7 +697,10 @@ export default function JournalScreen() {
       const res = await fetch("/api/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content: text }),
+        body: JSON.stringify({
+          content:  text,
+          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        }),
       });
       if (!res.ok) throw new Error("Analysis failed");
       const result: ParsedEntry = await res.json();

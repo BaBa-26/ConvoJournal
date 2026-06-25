@@ -44,7 +44,8 @@ export const JournalCreateSchema = z.object({
 });
 
 export const AnalyzeSchema = z.object({
-  content: z.string().min(1, "Content required").max(50_000),
+  content:  z.string().min(1, "Content required").max(50_000),
+  timezone: z.string().optional(),
 });
 
 // Reusable helper — returns parsed data or throws a Response-ready error
