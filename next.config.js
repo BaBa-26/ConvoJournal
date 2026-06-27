@@ -2,6 +2,9 @@
 const nextConfig = {
   experimental: {
     serverComponentsExternalPackages: ["@prisma/client", "prisma"],
+    outputFileTracingExcludes: {
+      "*": ["./node_modules/styled-jsx/**"],
+    },
   },
 
   async headers() {
