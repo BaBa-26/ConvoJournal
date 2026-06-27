@@ -9,6 +9,12 @@ import type { AnalysisResult } from "@/types";
 
 // Public endpoint — try-mode works unauthenticated; auth unlocks task dedup context
 export async function POST(req: NextRequest) {
+  // Reject oversized bodies before parsing — fast path, no AI call made
+  const contentLength = req.headers.get("content-length");
+  if (contentLength && parseInt(contentLength, 10) > 15_000) {
+    return NextResponse.json({ error: "Request too large" }, { status: 413 });
+  }
+
   try {
     const body = await req.json();
     const v = validate(AnalyzeSchema, body);

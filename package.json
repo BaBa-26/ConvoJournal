@@ -20,7 +20,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@google/generative-ai": "^0.24.1",
+    "@google/genai": "^2.10.0",
     "@next-auth/prisma-adapter": "^1.0.7",
     "@paper-design/shaders-react": "^0.0.76",
     "@prisma/client": "^5.22.0",

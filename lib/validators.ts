@@ -44,8 +44,8 @@ export const JournalCreateSchema = z.object({
 });
 
 export const AnalyzeSchema = z.object({
-  content:  z.string().min(1, "Content required").max(50_000),
-  timezone: z.string().optional(),
+  content:  z.string().min(1, "Content required").max(10_000),  // ~10 min of speech, enough for a journal
+  timezone: z.string().max(100).optional(),
 });
 
 // Reusable helper — returns parsed data or throws a Response-ready error

@@ -1,10 +1,9 @@
 import {
-  GoogleGenerativeAI,
-  SchemaType,
+  GoogleGenAI,
+  Type,
   HarmCategory,
   HarmBlockThreshold,
-  type Schema,
-} from "@google/generative-ai";
+} from "@google/genai";
 import type { AnalysisResult } from "@/types";
 
 interface GeminiContext {
@@ -80,34 +79,34 @@ eventDate: full ISO 8601 UTC string — REQUIRED.
 - Past-tense narrative and emotions belong ONLY in yesterday/today fields — never in tasks or reminders
 `.trim();
 
-const RESPONSE_SCHEMA: Schema = {
-  type: SchemaType.OBJECT,
+const RESPONSE_SCHEMA = {
+  type: Type.OBJECT,
   properties: {
-    yesterday: { type: SchemaType.STRING },
-    today:     { type: SchemaType.STRING },
-    tomorrow:  { type: SchemaType.STRING },
-    mood:      { type: SchemaType.STRING },
+    yesterday: { type: Type.STRING },
+    today:     { type: Type.STRING },
+    tomorrow:  { type: Type.STRING },
+    mood:      { type: Type.STRING },
     tasks: {
-      type: SchemaType.ARRAY,
+      type: Type.ARRAY,
       items: {
-        type: SchemaType.OBJECT,
+        type: Type.OBJECT,
         properties: {
-          title:       { type: SchemaType.STRING },
-          description: { type: SchemaType.STRING },
-          dueDate:     { type: SchemaType.STRING },
-          priority:    { type: SchemaType.STRING },
+          title:       { type: Type.STRING },
+          description: { type: Type.STRING },
+          dueDate:     { type: Type.STRING },
+          priority:    { type: Type.STRING },
         },
         required: ["title", "priority"],
       },
     },
     reminders: {
-      type: SchemaType.ARRAY,
+      type: Type.ARRAY,
       items: {
-        type: SchemaType.OBJECT,
+        type: Type.OBJECT,
         properties: {
-          title:       { type: SchemaType.STRING },
-          description: { type: SchemaType.STRING },
-          eventDate:   { type: SchemaType.STRING },
+          title:       { type: Type.STRING },
+          description: { type: Type.STRING },
+          eventDate:   { type: Type.STRING },
         },
         required: ["title", "eventDate"],
       },
@@ -148,16 +147,7 @@ export async function analyzeWithGemini(
   const key = process.env.GEMINI_API_KEY;
   if (!key) throw new Error("GEMINI_API_KEY is not set");
 
-  const genAI = new GoogleGenerativeAI(key);
-  const model = genAI.getGenerativeModel({
-    model: "gemini-2.5-flash",
-    systemInstruction: SYSTEM_PROMPT,
-    generationConfig: {
-      responseMimeType: "application/json",
-      responseSchema: RESPONSE_SCHEMA,
-    },
-    safetySettings: SAFETY_SETTINGS,
-  });
+  const ai = new GoogleGenAI({ apiKey: key });
 
   const todayISO = context?.todayISO ?? new Date().toISOString().slice(0, 10);
   const taskList = context?.pendingTaskTitles?.length
@@ -166,8 +156,18 @@ export async function analyzeWithGemini(
 
   const userPrompt = `[Context]\nToday's date: ${todayISO}\n${taskList}\n[Journal Entry]\n${text}`;
 
-  const result = await model.generateContent(userPrompt);
-  const raw = JSON.parse(result.response.text()) as Record<string, unknown>;
+  const response = await ai.models.generateContent({
+    model: "gemini-2.5-flash",
+    contents: userPrompt,
+    config: {
+      systemInstruction: SYSTEM_PROMPT,
+      responseMimeType: "application/json",
+      responseSchema: RESPONSE_SCHEMA,
+      safetySettings: SAFETY_SETTINGS,
+    },
+  });
+
+  const raw = JSON.parse(response.text ?? "{}") as Record<string, unknown>;
 
   const VALID_PRIORITIES = new Set(["high", "medium", "low"]);
 
