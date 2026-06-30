@@ -10,7 +10,8 @@
     "db:migrate": "prisma migrate dev",
     "db:push": "prisma db push",
     "db:studio": "prisma studio",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate",
+    "test:gemini": "tsx scripts/test-gemini.ts"
   },
   "repository": {
     "type": "git",
@@ -51,6 +52,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "dotenv": "^17.4.2"
+    "dotenv": "^17.4.2",
+    "tsx": "^4.22.4"
   }
 }

@@ -43,3 +43,6 @@ npm-debug.log*
 whisper-service/venv/
 whisper-service/__pycache__/
 *.pyc
+
+#claude
+TAask.md

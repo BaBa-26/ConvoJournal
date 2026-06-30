@@ -156,6 +156,13 @@ export async function analyzeWithGemini(
 
   const userPrompt = `[Context]\nToday's date: ${todayISO}\n${taskList}\n[Journal Entry]\n${text}`;
 
+  const debug = process.env.GEMINI_DEBUG === "true";
+  if (debug) {
+    console.log("\n=== GEMINI REQUEST ===");
+    console.log("--- system prompt ---\n" + SYSTEM_PROMPT);
+    console.log("--- user prompt ---\n" + userPrompt);
+  }
+
   const response = await ai.models.generateContent({
     model: "gemini-2.5-flash",
     contents: userPrompt,
@@ -166,6 +173,11 @@ export async function analyzeWithGemini(
       safetySettings: SAFETY_SETTINGS,
     },
   });
+
+  if (debug) {
+    console.log("\n=== GEMINI RAW RESPONSE ===");
+    console.log(response.text);
+  }
 
   const raw = JSON.parse(response.text ?? "{}") as Record<string, unknown>;
 
