@@ -21,6 +21,12 @@ export const ReminderCreateSchema = z.object({
   eventDate:   z.string().datetime({ offset: true }),
 });
 
+export const ReminderUpdateSchema = z.object({
+  title:     z.string().min(1).max(500).optional(),
+  reminded:  z.boolean().optional(),
+  eventDate: z.string().datetime({ offset: true }).optional(),
+});
+
 export const JournalCreateSchema = z.object({
   rawContent: z.string().min(1, "Content required").max(50_000),
   date:       z.string().datetime({ offset: true }).optional(),
