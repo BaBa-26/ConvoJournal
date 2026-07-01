@@ -23,31 +23,40 @@ module.exports = {
           DEFAULT: "hsl(var(--primary) / <alpha-value>)",
           foreground: "hsl(var(--primary-foreground) / <alpha-value>)",
         },
-        // Charcoal backgrounds
+        // Charcoal backgrounds — CSS-var driven so they flip in light mode (see globals.css)
         ink: {
-          950: "#0f0e0b",
-          900: "#1a1815",
-          800: "#252220",
-          700: "#302d29",
-          600: "#3d3a35",
+          950: "rgb(var(--ink-950) / <alpha-value>)",
+          900: "rgb(var(--ink-900) / <alpha-value>)",
+          800: "rgb(var(--ink-800) / <alpha-value>)",
+          700: "rgb(var(--ink-700) / <alpha-value>)",
+          600: "rgb(var(--ink-600) / <alpha-value>)",
         },
-        // Parchment text
+        // Parchment text — CSS-var driven so it flips (→ dark text) in light mode
         parchment: {
-          DEFAULT: "#e8d5b0",
-          100: "#f0e4cc",
-          200: "#e8d5b0",
-          300: "#d4c09a",
-          400: "#c8b89a",
-          500: "#b8a88a",
-          600: "#8a7a68",
-          700: "#6a5a4a",
-          800: "#4a3c2e",
+          DEFAULT: "rgb(var(--parchment-200) / <alpha-value>)",
+          100: "rgb(var(--parchment-100) / <alpha-value>)",
+          200: "rgb(var(--parchment-200) / <alpha-value>)",
+          300: "rgb(var(--parchment-300) / <alpha-value>)",
+          400: "rgb(var(--parchment-400) / <alpha-value>)",
+          500: "rgb(var(--parchment-500) / <alpha-value>)",
+          600: "rgb(var(--parchment-600) / <alpha-value>)",
+          700: "rgb(var(--parchment-700) / <alpha-value>)",
+          800: "rgb(var(--parchment-800) / <alpha-value>)",
         },
-        // Amber gold accent
+        // Fixed dark text for placing ON the accent/gold (never flips — keeps contrast in light mode)
+        onaccent: "rgb(var(--on-accent) / <alpha-value>)",
+        // Amber gold accent — fixed brand chrome (does NOT follow user accent)
         gold: {
           DEFAULT: "#c8a878",
           light: "#d8bc98",
           dark: "#a88858",
+        },
+        // User-customizable accent — CSS-var driven (RGB channels, so `/opacity` modifiers work).
+        // Defaults to gold via globals.css :root so the look is unchanged until a user picks an accent.
+        accent: {
+          DEFAULT: "rgb(var(--accent) / <alpha-value>)",
+          light: "rgb(var(--accent-light) / <alpha-value>)",
+          dark: "rgb(var(--accent-dark) / <alpha-value>)",
         },
         // Priority colors
         priority: {

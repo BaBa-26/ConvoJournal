@@ -15,7 +15,7 @@ function NavIcon({ shape, active }: { shape: string; active: boolean }) {
     display: "inline-block",
     flexShrink: 0,
     transition: "all 0.2s ease",
-    background: active ? "#c8a878" : "transparent",
+    background: active ? "rgb(var(--accent))" : "transparent",
     border: active ? "none" : "1.6px solid #4a3c2e",
   };
   if (shape === "circle")   return <span style={{ ...style, width: 14, height: 14, borderRadius: "50%" }} />;

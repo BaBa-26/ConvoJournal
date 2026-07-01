@@ -13,18 +13,72 @@
   --muted-foreground: 28 15% 47%;    /* parchment-600 #8a7a68 */
   --primary: 36 44% 63%;             /* gold     #c8a878 */
   --primary-foreground: 33 16% 6%;   /* ink-950  #0f0e0b */
+
+  /* User-customizable accent — RGB channels, default gold. Overridden inline from prefs. */
+  --accent: 200 168 120;
+  --accent-light: 216 188 152;
+  --accent-dark: 168 136 88;
+  --type-scale: 1;
+
+  /* Fixed dark text for placing on the accent/gold — never flips (keeps contrast in light mode). */
+  --on-accent: 15 14 11;
+
+  /* Ink surfaces (RGB channels) — dark values. Flipped in [data-color-mode="light"] below. */
+  --ink-950: 15 14 11;      /* #0f0e0b */
+  --ink-900: 26 24 21;      /* #1a1815 */
+  --ink-800: 37 34 32;      /* #252220 */
+  --ink-700: 48 45 41;      /* #302d29 */
+  --ink-600: 61 58 53;      /* #3d3a35 */
+
+  /* Parchment text (RGB channels) — dark-mode (light-on-dark) values. */
+  --parchment-100: 240 228 204;  /* #f0e4cc */
+  --parchment-200: 232 213 176;  /* #e8d5b0 */
+  --parchment-300: 212 192 154;  /* #d4c09a */
+  --parchment-400: 200 184 154;  /* #c8b89a */
+  --parchment-500: 184 168 138;  /* #b8a88a */
+  --parchment-600: 138 122 104;  /* #8a7a68 */
+  --parchment-700: 106 90 74;    /* #6a5a4a */
+  --parchment-800: 74 60 46;     /* #4a3c2e */
+}
+
+/* Light mode — applies app-wide (data-color-mode="light" is set on <html>). */
+[data-color-mode="light"] {
+  --background: 40 38% 95%;           /* warm parchment bg */
+  --foreground: 33 20% 16%;           /* near-ink text */
+  --card: 40 44% 98%;
+  --card-foreground: 33 20% 16%;
+  --border: 38 24% 86%;
+  --muted: 38 30% 91%;
+  --muted-foreground: 30 12% 42%;
+
+  /* Ink surfaces → light cream surfaces */
+  --ink-950: 244 238 222;   /* page shell */
+  --ink-900: 251 247 238;   /* cards */
+  --ink-800: 239 232 216;   /* inputs / muted */
+  --ink-700: 226 216 196;   /* borders */
+  --ink-600: 208 196 172;   /* stronger borders */
+
+  /* Parchment text → dark-on-light */
+  --parchment-100: 32 29 24;
+  --parchment-200: 42 38 32;
+  --parchment-300: 58 53 44;
+  --parchment-400: 74 68 56;
+  --parchment-500: 92 84 70;
+  --parchment-600: 122 111 92;
+  --parchment-700: 148 136 111;
+  --parchment-800: 168 154 126;
 }
 
 @layer base {
   html {
     -webkit-tap-highlight-color: transparent;
     -webkit-text-size-adjust: 100%;
-    background-color: #0f0e0b;
+    background-color: rgb(var(--ink-950));
   }
 
   body {
-    background-color: #0f0e0b;
-    color: #e8d5b0;
+    background-color: rgb(var(--ink-950));
+    color: rgb(var(--parchment-200));
     font-family: var(--font-dm-mono), ui-monospace, monospace;
     -webkit-font-smoothing: antialiased;
     overscroll-behavior: none;
@@ -33,29 +87,35 @@
   /* Scrollbar — hide on mobile, minimal on desktop */
   ::-webkit-scrollbar { width: 3px; }
   ::-webkit-scrollbar-track { background: transparent; }
-  ::-webkit-scrollbar-thumb { background: #3d3a35; border-radius: 2px; }
+  ::-webkit-scrollbar-thumb { background: rgb(var(--ink-600)); border-radius: 2px; }
 
   /* Remove autofill yellow */
   input:-webkit-autofill,
   textarea:-webkit-autofill {
-    -webkit-box-shadow: 0 0 0 100px #1a1815 inset;
-    -webkit-text-fill-color: #e8d5b0;
+    -webkit-box-shadow: 0 0 0 100px rgb(var(--ink-900)) inset;
+    -webkit-text-fill-color: rgb(var(--parchment-200));
   }
 }
 
 @layer components {
   /* ─── Buttons ─────────────────────────────────────────── */
   .btn-primary {
-    @apply bg-gold text-ink-950 px-5 py-3 rounded-xl font-mono text-sm font-medium
+    @apply bg-accent text-onaccent px-5 py-3 rounded-xl font-mono text-sm font-medium
            tracking-wide transition-all duration-150
            active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed
            min-h-[44px] flex items-center justify-center gap-2;
   }
   .btn-ghost {
-    @apply text-parchment-600 px-5 py-3 rounded-xl font-mono text-sm
+    @apply bg-ink-800 text-parchment-400 px-5 py-3 rounded-xl font-mono text-sm
            border border-ink-600 tracking-wide transition-all duration-150
-           active:scale-95 active:bg-ink-800 disabled:opacity-40
+           hover:bg-ink-700 active:scale-95 disabled:opacity-40
            min-h-[44px] flex items-center justify-center gap-2;
+  }
+
+  /* Sticky form footer — transparent so the buttons float smoothly over the page/wallpaper
+     instead of sitting in an opaque box. Just handles stickiness + spacing. */
+  .action-bar {
+    @apply sticky bottom-0 z-10 flex gap-3 pt-4 pb-2;
   }
 
   /* ─── Cards ────────────────────────────────────────────── */
@@ -75,7 +135,7 @@
   .input {
     @apply w-full bg-ink-800 border border-ink-600 rounded-xl px-4 py-3
            text-sm text-parchment-200 placeholder-parchment-700 font-mono
-           focus:outline-none focus:border-gold/60 focus:ring-1 focus:ring-gold/30
+           focus:outline-none focus:border-accent/60 focus:ring-1 focus:ring-accent/30
            transition-all duration-150 min-h-[44px];
   }
   .textarea {
@@ -86,6 +146,43 @@
   .divider {
     @apply border-t border-ink-700 my-4;
   }
+}
+
+/* ─── Custom background: let the fixed wallpaper layer show through the page shell ───
+   An opaque <html>/<body> background paints OVER a negative-z fixed layer, hiding it — so
+   when a background is set we make the shell transparent. The fixed wallpaper covers the whole
+   viewport, so there's no gap. Screen roots are already transparent; only opaque cards cover it. */
+html[data-has-bg="true"],
+html[data-has-bg="true"] body {
+  background-color: transparent;
+}
+
+/* ─── Today surface — goes transparent when a custom background is set ─── */
+.today-surface {
+  background-color: hsl(var(--background));
+}
+html[data-has-bg="true"] .today-surface {
+  background-color: transparent;
+}
+
+/* Frosted-glass widget cards — only when a background is set AND the user opted in.
+   Only the card SURFACE is translucent: the alpha is kept high (0.78) and the backdrop is
+   heavily blurred so the wallpaper reads as a soft wash behind the card while the text/content
+   on top stays fully opaque and crisp. Class-name selectors work because Tailwind emits literal
+   `.bg-card` / `.bg-muted` classes into the DOM. */
+html[data-has-bg="true"][data-surface="translucent"] .bg-card,
+html[data-has-bg="true"][data-surface="translucent"] .bg-muted,
+html[data-has-bg="true"][data-surface="translucent"] .card,
+html[data-has-bg="true"][data-surface="translucent"] .card-tight {
+  background-color: hsl(var(--card) / 0.78);
+  backdrop-filter: blur(20px) saturate(1.4);
+  -webkit-backdrop-filter: blur(20px) saturate(1.4);
+}
+
+/* Keep on-wallpaper header text (which sits outside any card) legible over any image. */
+html[data-has-bg="true"] .today-surface h1,
+html[data-has-bg="true"] .today-surface header p {
+  text-shadow: 0 1px 16px hsl(var(--background)), 0 0 3px hsl(var(--background));
 }
 
 /* ─── Safe area padding for PWA ───────────────────────── */

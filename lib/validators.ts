@@ -11,6 +11,7 @@ export const TaskCreateSchema = z.object({
 export const TaskUpdateSchema = z.object({
   title:     z.string().min(1).max(500).optional(),
   completed: z.boolean().optional(),
+  progress:  z.number().int().min(0).max(100).optional(),
   priority:  z.enum(["high", "medium", "low"]).optional(),
   dueDate:   z.string().datetime({ offset: true }).nullish().optional(),
 });
@@ -48,6 +49,26 @@ export const JournalCreateSchema = z.object({
     })).optional(),
   }).optional(),
 });
+
+const WIDGET_KEY = z.enum(["tonight", "agenda", "stats", "streak", "tomorrow", "recent"]);
+
+export const UserPreferencesUpdateSchema = z.object({
+  displayName:   z.string().trim().min(1).max(50).nullish(),
+  accentColor:   z.enum(["#c8a878", "#c87a6a", "#7a9a7a", "#6f9bd1", "#b07ab0"]).nullish(),
+  typeScale:     z.enum(["sm", "md", "lg"]).optional(),
+  reminderTime:  z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Expected HH:mm").nullish(),
+  themeLayout:   z.enum(["daybreak", "hearth", "mosaic"]).optional(),
+  colorMode:     z.enum(["light", "dark"]).optional(),
+  widgetOrder:   z.array(WIDGET_KEY).max(6).optional(),
+  hiddenWidgets: z.array(WIDGET_KEY).max(6).optional(),
+  // Either a `preset:<key>` token or an uploaded (downscaled) image data URL. Cap guards abuse.
+  backgroundImage: z
+    .string()
+    .max(3_000_000)
+    .regex(/^(preset:[a-z0-9-]{1,32}|data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+)$/, "Invalid background")
+    .nullish(),
+  surfaceStyle:  z.enum(["solid", "translucent"]).optional(),
+}).strict();
 
 export const AnalyzeSchema = z.object({
   content:  z.string().min(1, "Content required").max(10_000),  // ~10 min of speech, enough for a journal

@@ -1,9 +1,11 @@
-import type { JournalEntry, ParsedEntry, Reminder, Task } from "@/types";
+import type { JournalEntry, ParsedEntry, Reminder, Task, UserPreferences } from "@/types";
+import { DEFAULT_PREFERENCES } from "@/types";
 
 export interface DemoState {
   tasks: Task[];
   reminders: Reminder[];
   entries: JournalEntry[];
+  preferences: UserPreferences;
 }
 
 export const DEMO_STORAGE_KEY = "progress-demo-state-v1";
@@ -56,6 +58,7 @@ export function createDemoState(): DemoState {
     description: "Split recorder state from transcription flow",
     dueDate: makeIso(0, 14, 0),
     completed: false,
+    progress: 40,
     priority: "medium",
     source: "journal",
     journalEntryId: "demo-entry-today",
@@ -69,6 +72,7 @@ export function createDemoState(): DemoState {
     description: "Summarize the current testing pass",
     dueDate: makeIso(0, 17, 30),
     completed: false,
+    progress: 75,
     priority: "high",
     source: "manual",
     journalEntryId: null,
@@ -82,7 +86,22 @@ export function createDemoState(): DemoState {
     description: null,
     dueDate: makeIso(1, 9, 0),
     completed: false,
+    progress: 0,
     priority: "low",
+    source: "manual",
+    journalEntryId: null,
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  const doneTask: Task = {
+    id: "demo-task-ship-fix",
+    title: "Ship reminders auth fix",
+    description: "Add ownership check to PATCH/DELETE",
+    dueDate: makeIso(-1, 16, 0),
+    completed: true,
+    progress: 100,
+    priority: "high",
     source: "manual",
     journalEntryId: null,
     createdAt: now,
@@ -151,10 +170,34 @@ export function createDemoState(): DemoState {
     reminders: [cloneReminder(reminderTomorrow)],
   };
 
+  // Filler entries so the streak/heatmap has a real run of consecutive days.
+  // Combined with today/-1/-3 above this yields an unbroken 0..-6 streak, then a gap.
+  const moods = ["focused", "calm", "tired", "bright", "steady"];
+  const fillerEntries: JournalEntry[] = [-2, -4, -5, -6, -9, -10].map((offset, i) => ({
+    id: `demo-entry-filler-${Math.abs(offset)}`,
+    date: makeEntryDate(offset),
+    rawContent:
+      "A short reflection — kept the momentum, wrote a few lines, and noted what to carry into tomorrow.",
+    yesterday: "Closed a couple of loops.",
+    today: "Stayed with the work and kept it calm.",
+    tomorrow: "Pick the most useful thing and start there.",
+    mood: moods[i % moods.length],
+    createdAt: now,
+    updatedAt: now,
+    tasks: [],
+    reminders: [],
+  }));
+
   return {
-    tasks: [cloneTask(journalTask), cloneTask(manualTask), cloneTask(tomorrowTask)],
+    tasks: [
+      cloneTask(journalTask),
+      cloneTask(manualTask),
+      cloneTask(tomorrowTask),
+      cloneTask(doneTask),
+    ],
     reminders: [cloneReminder(reminderToday), cloneReminder(reminderTomorrow)],
-    entries: [todayEntry, yesterdayEntry, olderEntry],
+    entries: [todayEntry, yesterdayEntry, olderEntry, ...fillerEntries],
+    preferences: { ...DEFAULT_PREFERENCES },
   };
 }
 
@@ -188,6 +231,8 @@ export function loadDemoState(): DemoState {
       tasks: parsed.tasks.map(cloneTask),
       reminders: parsed.reminders.map(cloneReminder),
       entries: parsed.entries.map(cloneEntry),
+      // Backfill preferences for blobs saved before this slice existed.
+      preferences: { ...DEFAULT_PREFERENCES, ...(parsed.preferences ?? {}) },
     };
   } catch {
     const seed = createDemoState();
@@ -228,6 +273,7 @@ export function appendDemoJournalEntry(rawContent: string, parsed: ParsedEntry):
       description: task.description ?? null,
       dueDate: task.dueDate ?? null,
       completed: false,
+      progress: 0,
       priority: task.priority,
       source: "journal",
       journalEntryId: entryId,
@@ -259,9 +305,24 @@ export function appendDemoJournalEntry(rawContent: string, parsed: ParsedEntry):
     };
 
     return {
+      ...state,
       tasks: [...nestedTasks, ...state.tasks],
       reminders: [...nestedReminders, ...state.reminders],
       entries: [entry, ...state.entries],
     };
   });
+}
+
+// ─── Preferences (demo / unauthenticated) ─────────────────────────────────────
+
+export function loadDemoPreferences(): UserPreferences {
+  return loadDemoState().preferences;
+}
+
+export function updateDemoPreferences(patch: Partial<UserPreferences>): UserPreferences {
+  const next = updateDemoState((state) => ({
+    ...state,
+    preferences: { ...state.preferences, ...patch },
+  }));
+  return next.preferences;
 }

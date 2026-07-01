@@ -57,6 +57,16 @@ model User {
   onboarded      Boolean        @default(false)
   displayName    String?
   journalMode    String?        // "voice" | "text" | "both"
+  // ─── Dashboard personalization ───────────────────────────────────────────
+  accentColor    String?        // hex preset, e.g. "#c8a878"; null = default gold
+  typeScale      String   @default("md")       // "sm" | "md" | "lg"
+  reminderTime   String?        // "HH:mm" 24h — nightly reflection nudge (persisted only)
+  themeLayout    String   @default("daybreak")  // "daybreak" | "hearth" | "mosaic"
+  colorMode      String   @default("dark")      // "light" | "dark" — only meaningful for daybreak
+  widgetOrder    String[] @default(["tonight", "agenda", "stats", "streak", "tomorrow", "recent"])
+  hiddenWidgets  String[] @default([])
+  backgroundImage String?       // "preset:<key>" token or an uploaded data URL; null = none
+  surfaceStyle    String   @default("solid")  // "solid" | "translucent" — widget card look
   accounts       Account[]
   sessions       Session[]
   entries        JournalEntry[]
@@ -93,6 +103,7 @@ model Task {
   description    String?
   dueDate        DateTime?
   completed      Boolean       @default(false)
+  progress       Int           @default(0)   // 0–100; reaches 100 when completed
   priority       String        @default("medium")
   source         String        @default("journal")
   userId         String

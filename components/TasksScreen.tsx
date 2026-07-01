@@ -5,6 +5,8 @@ import { format } from "date-fns";
 import { useSession, signIn } from "next-auth/react";
 import type { Task, TaskFilter } from "@/types";
 import { loadDemoState, updateDemoState } from "@/lib/demoData";
+import { computeTaskStats } from "@/lib/taskStats";
+import DraggableProgressBar from "@/components/DraggableProgressBar";
 
 // ─── Shared auth gate ─────────────────────────────────────────────────────────
 
@@ -43,12 +45,17 @@ function TaskRow({
   task,
   onToggle,
   onDelete,
+  onProgressCommit,
 }: {
   task: Task;
   onToggle: (id: string, completed: boolean) => void;
   onDelete: (id: string) => void;
+  onProgressCommit: (id: string, progress: number) => void;
 }) {
   const [deleting, setDeleting] = useState(false);
+  // Local progress for live drag feedback; falls back to the server value when idle.
+  const [localProgress, setLocalProgress] = useState(task.progress ?? 0);
+  useEffect(() => { setLocalProgress(task.progress ?? 0); }, [task.progress]);
 
   const handleDelete = async () => {
     setDeleting(true);
@@ -77,8 +84,8 @@ function TaskRow({
             w-5 h-5 rounded-md border-2 flex items-center justify-center
             transition-all duration-150
             ${task.completed
-              ? "border-transparent bg-gold"
-              : "border-parchment-700 hover:border-gold/60"
+              ? "border-transparent bg-accent"
+              : "border-parchment-700 hover:border-accent/60"
             }
           `}
         >
@@ -126,6 +133,15 @@ function TaskRow({
             </>
           )}
         </div>
+
+        {/* Draggable progress — hidden once complete (bar would just be full) */}
+        {!task.completed && (
+          <DraggableProgressBar
+            progress={localProgress}
+            onChangeLive={setLocalProgress}
+            onCommit={(p) => onProgressCommit(task.id, p)}
+          />
+        )}
       </div>
 
       {/* Delete */}
@@ -230,11 +246,13 @@ export default function TasksScreen() {
   useEffect(() => { fetchTasks(); }, [fetchTasks]);
 
   const handleToggle = async (id: string, completed: boolean) => {
+    // Completing a task snaps progress to 100 (mirrors the API sync rule).
+    const patch = (t: Task): Task => ({ ...t, completed, progress: completed ? 100 : t.progress });
     if (!session) {
-      setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, completed } : t)));
+      setTasks((prev) => prev.map((t) => (t.id === id ? patch(t) : t)));
       updateDemoState((state) => ({
         ...state,
-        tasks: state.tasks.map((t) => (t.id === id ? { ...t, completed } : t)),
+        tasks: state.tasks.map((t) => (t.id === id ? patch(t) : t)),
       }));
       return;
     }
@@ -242,6 +260,29 @@ export default function TasksScreen() {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ completed }),
+    });
+    if (res.ok) {
+      const updated: Task = await res.json();
+      setTasks((prev) => prev.map((t) => (t.id === id ? updated : t)));
+    }
+  };
+
+  const handleProgressCommit = async (id: string, progress: number) => {
+    const completed = progress >= 100;
+    const patch = (t: Task): Task => ({ ...t, progress, completed });
+    if (!session) {
+      setTasks((prev) => prev.map((t) => (t.id === id ? patch(t) : t)));
+      updateDemoState((state) => ({
+        ...state,
+        tasks: state.tasks.map((t) => (t.id === id ? patch(t) : t)),
+      }));
+      return;
+    }
+    setTasks((prev) => prev.map((t) => (t.id === id ? patch(t) : t))); // optimistic
+    const res = await fetch(`/api/tasks/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ progress }),
     });
     if (res.ok) {
       const updated: Task = await res.json();
@@ -271,6 +312,7 @@ export default function TasksScreen() {
         description: data.description ?? null,
         dueDate: data.dueDate ?? null,
         completed: false,
+        progress: 0,
         priority: data.priority ?? "medium",
         source: "manual",
         journalEntryId: null,
@@ -300,6 +342,7 @@ export default function TasksScreen() {
   );
 
   const pending = tasks.filter((t) => !t.completed).length;
+  const stats = computeTaskStats(tasks);
 
   // ── Auth gate ──────────────────────────────────────────
   if (false && status !== "loading" && !session) {
@@ -312,7 +355,7 @@ export default function TasksScreen() {
       <header className="px-5 pt-safe pt-5 pb-4 flex-shrink-0">
         <div className="flex items-start justify-between">
           <div>
-            <h1 className="font-display text-2xl text-parchment-200">Tasks</h1>
+            <h1 className="font-display text-2xl text-parchment-200">Goals</h1>
             <p className="font-mono text-[10px] text-parchment-700 mt-1 tracking-widest uppercase">
               {pending} pending
             </p>
@@ -320,13 +363,44 @@ export default function TasksScreen() {
           {/* Add button */}
           <button
             onClick={() => setShowAdd((s) => !s)}
-            className="w-11 h-11 rounded-full border border-gold/40 flex items-center justify-center
-                       text-gold hover:bg-gold/10 transition-all active:scale-95 focus:outline-none"
+            className="w-11 h-11 rounded-full border border-accent/40 flex items-center justify-center
+                       text-accent hover:bg-accent/10 transition-all active:scale-95 focus:outline-none"
             aria-label="Add task"
           >
             <span className="text-xl leading-none">{showAdd ? "×" : "+"}</span>
           </button>
         </div>
+
+        {/* Progress overview — completion bar + priority breakdown */}
+        {!loading && stats.total > 0 && (
+          <div className="mt-4 bg-ink-900 border border-ink-700 rounded-xl p-3.5 space-y-2.5">
+            <div className="flex items-center justify-between">
+              <span className="font-mono text-[10px] uppercase tracking-widest text-parchment-700">
+                {stats.done} of {stats.total} complete
+              </span>
+              <span className="font-display italic text-base text-accent leading-none">{stats.completionPct}%</span>
+            </div>
+            <div className="h-2 rounded-full bg-ink-800 overflow-hidden">
+              <div
+                className="h-full rounded-full bg-accent transition-all duration-300"
+                style={{ width: `${stats.completionPct}%` }}
+              />
+            </div>
+            <div className="flex items-center gap-4 pt-0.5">
+              {(["high", "medium", "low"] as const).map((p) => (
+                <span key={p} className="flex items-center gap-1.5">
+                  <span
+                    className="w-1.5 h-1.5 rounded-full"
+                    style={{ backgroundColor: PRIORITY_COLORS[p] }}
+                  />
+                  <span className="font-mono text-[9px] text-parchment-700">
+                    {stats.byPriority[p]} {p}
+                  </span>
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
       </header>
 
       <div className="flex-1 overflow-y-auto px-5 space-y-3 pb-4">
@@ -371,7 +445,13 @@ export default function TasksScreen() {
         ) : (
           <div className="space-y-2 animate-fade-in">
             {filtered.map((task) => (
-              <TaskRow key={task.id} task={task} onToggle={handleToggle} onDelete={handleDelete} />
+              <TaskRow
+                key={task.id}
+                task={task}
+                onToggle={handleToggle}
+                onDelete={handleDelete}
+                onProgressCommit={handleProgressCommit}
+              />
             ))}
           </div>
         )}

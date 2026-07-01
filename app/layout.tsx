@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Playfair_Display, DM_Mono } from "next/font/google";
 import SideNav from "@/components/SideNav";
 import AuthProvider from "@/components/AuthProvider";
+import PreferencesProvider from "@/components/PreferencesProvider";
 import "./globals.css";
 
 const playfair = Playfair_Display({
@@ -41,15 +42,17 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en" className={`${playfair.variable} ${dmMono.variable}`}>
       <body className="min-h-screen bg-ink-950 overflow-x-hidden">
         <AuthProvider>
-          <div className="md:flex md:h-screen md:overflow-hidden">
-            <SideNav />
+          <PreferencesProvider>
+            <div className="md:flex md:h-screen md:overflow-hidden">
+              <SideNav />
 
-            <div className="flex-1 flex flex-col md:overflow-y-auto">
-              <div className="max-w-[430px] md:max-w-2xl mx-auto w-full min-h-screen md:min-h-0 flex flex-col relative">
-                {children}
+              <div className="flex-1 flex flex-col md:overflow-y-auto">
+                <div className="max-w-[430px] md:max-w-2xl mx-auto w-full min-h-screen md:min-h-0 flex flex-col relative">
+                  {children}
+                </div>
               </div>
             </div>
-          </div>
+          </PreferencesProvider>
         </AuthProvider>
       </body>
     </html>

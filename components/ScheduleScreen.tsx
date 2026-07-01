@@ -578,6 +578,7 @@ export default function ScheduleScreen() {
           description: description || null,
           dueDate: date ? new Date(date + "T12:00:00").toISOString() : null,
           completed: false,
+          progress: 0,
           priority: priority as Task["priority"],
           source: "manual",
           journalEntryId: null,

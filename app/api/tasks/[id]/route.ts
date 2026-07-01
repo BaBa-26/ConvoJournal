@@ -23,16 +23,40 @@ export async function PATCH(
     const parsed = validate(TaskUpdateSchema, body);
     if (!parsed.ok) return NextResponse.json(parsed.error, { status: 400 });
 
+    const data: {
+      completed?: boolean;
+      progress?: number;
+      title?: string;
+      priority?: "high" | "medium" | "low";
+      dueDate?: Date | null;
+    } = {};
+
+    if (parsed.data.title    !== undefined) data.title    = parsed.data.title;
+    if (parsed.data.priority !== undefined) data.priority = parsed.data.priority;
+    if (parsed.data.dueDate  !== undefined) {
+      data.dueDate = parsed.data.dueDate ? new Date(parsed.data.dueDate) : null;
+    }
+
+    // Keep `completed` and `progress` in sync.
+    // - Completing a task snaps progress to 100.
+    // - Dragging progress to 100 marks it complete; below 100 (when not explicitly
+    //   completing) marks it incomplete. An explicit `completed` always wins for that flag.
+    if (parsed.data.progress !== undefined) {
+      data.progress = parsed.data.progress;
+      if (parsed.data.completed === undefined) {
+        data.completed = parsed.data.progress >= 100;
+      }
+    }
+    if (parsed.data.completed !== undefined) {
+      data.completed = parsed.data.completed;
+      if (parsed.data.completed && parsed.data.progress === undefined) {
+        data.progress = 100;
+      }
+    }
+
     const updated = await prisma.task.update({
       where: { id: params.id },
-      data: {
-        ...(parsed.data.completed !== undefined && { completed: parsed.data.completed }),
-        ...(parsed.data.title     !== undefined && { title:     parsed.data.title     }),
-        ...(parsed.data.priority  !== undefined && { priority:  parsed.data.priority  }),
-        ...(parsed.data.dueDate   !== undefined && {
-          dueDate: parsed.data.dueDate ? new Date(parsed.data.dueDate) : null,
-        }),
-      },
+      data,
     });
     return NextResponse.json(updated);
   } catch (error) {

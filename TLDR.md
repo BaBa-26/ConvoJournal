@@ -1,6 +1,39 @@
 # Progress (ConvoJournal) — Handoff Doc
 
-Last updated: 2026-06-30, end of session. Read the "Last Session" section first — it's the most likely thing to matter for what you pick up next.
+Last updated: 2026-06-30. **Read "🎨 Dashboard Redesign" below first — it's the active in-progress work.** The older "⚠️ Last Session" (reminders security fix) is still valid history below it.
+
+---
+
+## 🎨 Dashboard Redesign + Goals Progress — IN PROGRESS (this session)
+
+Implementing the `Progress Dashboard.dc.html` claude.ai/design mockup: a redesigned Today screen with **3 selectable layouts**, **full personalization** (accent color, name, type size, reminder time, light/dark), and **Goals progress tracking** (per-task 0–100% with a draggable progress bar).
+
+### ⛔ Migration NOT applied (do this carefully, with user approval)
+`prisma/schema.prisma` was edited (new `Task.progress Int @default(0)` + User personalization columns: `accentColor`, `typeScale`, `reminderTime`, `themeLayout`, `colorMode`, `widgetOrder String[]`, `hiddenWidgets String[]`). **The migration was deliberately NOT run** — `prisma migrate dev` hits the shared Neon DB and the auto-mode classifier blocked it as a "production deploy before local verification." All columns are additive/defaulted so they're backward-compatible (existing prod app keeps working), but **authenticated mode will 500 on `/api/tasks`, `/api/user/preferences` etc. until the migration is applied.** **Demo mode (signed out) needs NO migration** — it's all localStorage — so verify there first. User rule: **do NOT deploy/migrate until verified in local dev, and not without explicit confirmation.**
+- When approved: `npx prisma migrate dev --name add_personalization_and_task_progress`. Watch for a drift-reset prompt (should be clean since prod was built from existing migrations).
+
+### What's DONE (code written, not yet typechecked or run)
+- **Data/types/validators**: `types/index.ts` (Task.progress, `UserPreferences`, `ThemeLayout`/`ColorMode`/`TypeScale`/`WidgetKey`, `ACCENT_SWATCHES`, `DEFAULT_PREFERENCES`, `AgendaItem`/`WeekStats`/`TaskStats`/`StreakDay`). `lib/validators.ts` (`TaskUpdateSchema.progress`, `UserPreferencesUpdateSchema`).
+- **API**: NEW `app/api/user/preferences/route.ts` (GET/PATCH, auth-gated, mirrors `user/onboard`). `app/api/tasks/[id]/route.ts` PATCH extended with progress↔completed sync (progress→100 sets completed; completing snaps progress→100).
+- **Theming**: `tailwind.config.js` new CSS-var `accent` token (`rgb(var(--accent) / <alpha-value>)`). `app/globals.css` `--accent*`/`--type-scale` defaults + `[data-color-mode="light"]` block; `.btn-primary`/`.input` migrated `gold`→`accent`. NEW `lib/theme.ts` (accent hex→RGB-channel map, `preferenceCssVars`, `formatReminderLabel`). NEW `components/PreferencesProvider.tsx` (context + `usePreferences()`+`patchPrefs`, threads CSS vars via `display:contents` wrapper; API when authed, demoData when not). Wired into `app/layout.tsx`. `SideNav`/`BottomNav` active gold → `rgb(var(--accent))`.
+- **Today dashboard**: `components/today/useTodayData.ts` (one fetch → agenda/weekStats/streak/heatmap/recent), `useTodayHeader.ts`, `widgets.tsx` (AgendaList, StreakHeatmap, WeeklyStats, TonightCTA, TomorrowPreview, RecentReflections — use shadcn `bg-card`/`text-foreground`/`border-border` tokens so they flip with light/dark). `DaybreakLayout.tsx` (light/dark toggle), `HearthLayout.tsx` (hero+sun glow, dark-only), `MosaicLayout.tsx` (framer-motion `Reorder` drag-reorder + hide, persisted via prefs). `TodayScreen.tsx` is now a thin switcher on `prefs.themeLayout`.
+- **Settings**: `components/SettingsScreen.tsx` new "Personalize" section (name, accent swatches, type size, reminder time, layout picker, light/dark for Daybreak).
+- **Demo parity**: `lib/demoData.ts` — `DemoState.preferences` slice (+ backfill for old blobs), `loadDemoPreferences`/`updateDemoPreferences`, `progress` on all demo tasks (varied 0/40/75/100 + a completed task), extra consecutive-day entries so streak/heatmap shows a real run.
+- `lib/taskStats.ts` — `computeTaskStats(tasks)` shared by Today's WeeklyStats and (pending) the Goals header.
+
+### What's DONE since (now also complete)
+- **Goals progress UI** — `components/DraggableProgressBar.tsx` (framer-motion `useMotionValue`+`drag="x"`, drag→0–100, commit on drag-end + tap-to-set on track). Integrated into `TaskRow` (local optimistic `progress` + `handleProgressCommit` mirroring `handleToggle`/`handleDelete`, PATCH `{progress}`; bar hidden when complete). Header now shows a **progress overview** (X of N complete, completion %, bar, priority breakdown via `computeTaskStats`). `handleToggle` snaps local `progress:100` on complete. Tasks title renamed "Tasks"→"Goals"; checkbox/add-button migrated `gold`→`accent`. `ScheduleScreen` demo Task literal got `progress:0`.
+- **Typecheck**: `npx tsc --noEmit` is **clean** (Prisma client regenerated via `prisma generate` — codegen only, no DB).
+- **Local verify (demo mode)**: `npm run dev` signed-out — `/`, `/tasks`, `/schedule`, `/settings`, `/journal` all compile + return **200, no errors**. SSR HTML confirms the provider threads `--accent: 200 168 120` (RGB channels) + `--type-scale:1` via a `display:contents` wrapper with `data-color-mode="dark"`, and the Daybreak layout + Goals progress overview render. (Interactive drag/reorder/accent-switching are client-only — exercise by hand in the browser to fully confirm.)
+
+### What's LEFT
+1. **Manual browser pass (demo mode)** — open localhost:3000 signed out and click through: Settings → layout picker (Daybreak/Hearth/Mosaic), accent swatches, type size S/M/L, Daybreak light/dark; Mosaic Edit-layout drag-reorder + hide/show; Goals drag a progress bar. Confirm it feels right (only the static SSR shell was auto-verified).
+2. **Neon migration** (with explicit user OK) — `npx prisma migrate dev --name add_personalization_and_task_progress`. Required before **authenticated** mode works (prefs + task.progress columns). Then verify signed-in, then deploy. Migration was intentionally blocked this session per the "verify locally first / don't deploy without confirmation" rule.
+
+### Key decisions (don't re-litigate)
+- All 3 layouts share ONE data hook + ONE widget set; only chrome differs. Light mode is **Daybreak-only and scoped to the Today surface** (rest of app stays dark — matches mockup). Accent is RGB-channel CSS var (so `/opacity` utilities work); heatmap uses `color-mix(in oklab, rgb(var(--accent)) X%, transparent)`. `gold-*` Tailwind tokens kept for fixed brand chrome (Journal/Schedule/onboarding intentionally still literal gold).
+
+---
 
 ## What It Is
 

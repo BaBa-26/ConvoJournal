@@ -311,14 +311,14 @@ function WritingPhase({
         </p>
       </div>
 
-      <div className="flex gap-3 sticky bottom-0 bg-ink-950 pb-2">
+      <div className="action-bar">
         <button onClick={onCancel} className="btn-ghost flex-1">
           ← back
         </button>
         <button
           onClick={() => text.trim() && onSubmit(text.trim())}
           disabled={!text.trim()}
-          className="btn-primary flex-1 disabled:opacity-40 disabled:cursor-not-allowed"
+          className="btn-primary flex-1"
         >
           Analyse entry
         </button>
@@ -508,7 +508,7 @@ function ReviewPhase({
       )}
 
       {/* Action buttons */}
-      <div className="flex gap-3 pt-2 sticky bottom-0 bg-ink-950 pb-2">
+      <div className="action-bar">
         <button onClick={onDiscard} className="btn-ghost flex-1">
           Discard
         </button>

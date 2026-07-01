@@ -1,0 +1,248 @@
+"use client";
+
+import Link from "next/link";
+import { format, parseISO, isToday, startOfDay, differenceInCalendarDays } from "date-fns";
+import type { AgendaItem, WeekStats, StreakDay, JournalEntry, Task, Reminder } from "@/types";
+
+const PRIORITY_COLORS: Record<string, string> = {
+  high: "#c87a6a",
+  medium: "#c8a860",
+  low: "#7a9a7a",
+};
+
+const LABEL = "text-[10px] font-mono uppercase tracking-[0.2em] text-muted-foreground";
+
+// ─── Agenda ───────────────────────────────────────────────────────────────────
+
+export function AgendaList({
+  items,
+  title = "Your day, in order",
+  emptyText = "A clear day. Start fresh.",
+}: {
+  items: AgendaItem[];
+  title?: string;
+  emptyText?: string;
+}) {
+  return (
+    <div className="bg-card border border-border rounded-2xl p-1.5">
+      <p className={`${LABEL} px-3 pt-2.5 pb-1.5`}>{title}</p>
+      {items.length === 0 ? (
+        <p className="font-display italic text-base text-muted-foreground text-center py-5">{emptyText}</p>
+      ) : (
+        <div className="flex flex-col">
+          {items.map((item) => (
+            <div key={`${item.kind}-${item.id}`} className="flex items-start gap-3 px-3 py-2.5">
+              {item.kind === "reminder" ? (
+                <span className="font-mono text-[10px] text-accent flex-shrink-0 mt-0.5 w-14">
+                  {format(parseISO(item.date), "h:mm a")}
+                </span>
+              ) : (
+                <span
+                  className="mt-1.5 w-2 h-2 rounded-full flex-shrink-0"
+                  style={{ background: PRIORITY_COLORS[item.priority ?? "medium"] }}
+                />
+              )}
+              {item.kind === "reminder" && (
+                <span className="mt-1 w-2.5 h-2.5 rounded-full border-2 border-accent flex-shrink-0" />
+              )}
+              <div className="flex-1 min-w-0">
+                <p className="font-mono text-sm text-foreground">{item.title}</p>
+                {item.kind === "task" && item.overdue && (
+                  <span className="inline-block mt-1 font-mono text-[9px] uppercase tracking-wider text-priority-high">
+                    overdue
+                  </span>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Streak heatmap ─────────────────────────────────────────────────────────────
+
+const HEAT_FILL: Record<number, string> = {
+  0: "color-mix(in oklab, rgb(var(--accent)) 9%, transparent)",
+  1: "color-mix(in oklab, rgb(var(--accent)) 26%, transparent)",
+  2: "color-mix(in oklab, rgb(var(--accent)) 46%, transparent)",
+  3: "color-mix(in oklab, rgb(var(--accent)) 70%, transparent)",
+  4: "rgb(var(--accent))",
+};
+
+export function StreakHeatmap({
+  days,
+  streakCount,
+  label = "Writing streak",
+  caption = "Five weeks of showing up. Don't break the chain.",
+  footer,
+}: {
+  days: StreakDay[];
+  streakCount: number;
+  label?: string;
+  caption?: string;
+  footer?: React.ReactNode;
+}) {
+  return (
+    <div className="bg-card border border-border rounded-2xl p-4">
+      <div className="flex justify-between items-center">
+        <span className={LABEL}>{label}</span>
+        <span className="font-display italic font-semibold text-lg text-accent">{streakCount} days</span>
+      </div>
+      <div className="grid grid-cols-7 gap-1 my-3.5">
+        {days.map((d) => (
+          <span
+            key={d.date}
+            className="w-full rounded-[3px]"
+            style={{ aspectRatio: "1 / 1", background: HEAT_FILL[d.level] }}
+            title={d.date}
+          />
+        ))}
+      </div>
+      {footer ?? <p className="font-mono text-[11px] text-muted-foreground m-0">{caption}</p>}
+    </div>
+  );
+}
+
+// ─── Weekly stats ───────────────────────────────────────────────────────────────
+
+export function WeeklyStats({
+  stats,
+  inline = false,
+  label = "This week",
+}: {
+  stats: WeekStats;
+  inline?: boolean;
+  label?: string;
+}) {
+  const row = (
+    <div className="grid grid-cols-3 gap-2.5">
+      {[
+        { num: stats.entries, lbl: "Entries" },
+        { num: stats.done, lbl: "Done" },
+        { num: stats.pending, lbl: "Pending" },
+      ].map((s) => (
+        <div key={s.lbl} className="py-3 px-2 text-center rounded-2xl bg-muted border border-border">
+          <div className="font-display italic font-semibold text-2xl text-foreground leading-none">{s.num}</div>
+          <div className="font-mono text-[8px] uppercase tracking-[0.14em] text-muted-foreground mt-1.5">{s.lbl}</div>
+        </div>
+      ))}
+    </div>
+  );
+
+  if (inline) return row;
+
+  return (
+    <div>
+      <p className={`${LABEL} mb-2.5 ml-0.5`}>{label}</p>
+      {row}
+    </div>
+  );
+}
+
+// ─── Tonight CTA ────────────────────────────────────────────────────────────────
+
+export function TonightCTA({
+  kicker = "Tonight",
+  prompt = "How did the day actually feel?",
+  cta = "Write tonight's reflection",
+  reminderLabel,
+  reminderPrefix = "reminder set",
+}: {
+  kicker?: string;
+  prompt?: string;
+  cta?: string;
+  reminderLabel?: string | null;
+  reminderPrefix?: string;
+}) {
+  return (
+    <div className="bg-muted border border-border rounded-2xl p-5">
+      <p className="font-mono text-[9px] text-accent uppercase tracking-[0.18em]">{kicker}</p>
+      <p className="font-display italic text-lg text-foreground mt-2 leading-snug">{prompt}</p>
+      <Link href="/journal" className="btn-primary justify-center mt-4 w-full">
+        {cta}
+      </Link>
+      {reminderLabel && (
+        <p className={`${LABEL} mt-3 text-center`}>
+          {reminderPrefix} · {reminderLabel}
+        </p>
+      )}
+    </div>
+  );
+}
+
+// ─── Tomorrow preview ───────────────────────────────────────────────────────────
+
+export function TomorrowPreview({
+  tasks,
+  reminders,
+  label = "Tomorrow",
+}: {
+  tasks: Task[];
+  reminders: Reminder[];
+  label?: string;
+}) {
+  const today = startOfDay(new Date());
+  const isTomorrow = (iso: string) => differenceInCalendarDays(startOfDay(parseISO(iso)), today) === 1;
+
+  const items = [
+    ...reminders.filter((r) => isTomorrow(r.eventDate)).map((r) => ({ id: r.id, date: r.eventDate, title: r.title })),
+    ...tasks
+      .filter((t) => !t.completed && t.dueDate && isTomorrow(t.dueDate))
+      .map((t) => ({ id: t.id, date: t.dueDate!, title: t.title })),
+  ].sort((a, b) => parseISO(a.date).getTime() - parseISO(b.date).getTime());
+
+  if (items.length === 0) return null;
+
+  return (
+    <div className="bg-card border border-border rounded-2xl p-4">
+      <p className={`${LABEL} mb-2.5`}>{label}</p>
+      <div className="flex flex-col gap-2">
+        {items.map((it) => (
+          <div key={it.id} className="flex items-center gap-3">
+            <span className="font-mono text-[10px] text-accent w-14 flex-shrink-0">
+              {format(parseISO(it.date), "h:mm a")}
+            </span>
+            <span className="font-mono text-sm text-foreground">{it.title}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── Recent reflections ─────────────────────────────────────────────────────────
+
+export function RecentReflections({
+  entries,
+  label = "Recent reflections",
+}: {
+  entries: JournalEntry[];
+  label?: string;
+}) {
+  if (entries.length === 0) return null;
+
+  return (
+    <div className="bg-card border border-border rounded-2xl px-4 pb-4 pt-1">
+      <p className={`${LABEL} mt-3 mb-0.5`}>{label}</p>
+      {entries.map((e) => {
+        const snippet = (e.today || e.rawContent || "").trim();
+        const when = isToday(parseISO(e.date)) ? "TODAY" : format(parseISO(e.date), "EEE").toUpperCase();
+        return (
+          <div key={e.id} className="py-2.5 border-t border-border first:border-t-0">
+            <div className="flex items-center gap-2 mb-1.5">
+              <span className={LABEL}>{when}</span>
+              {e.mood && (
+                <span className="font-mono text-[8px] uppercase tracking-[0.12em] text-accent border border-accent rounded-full px-2 py-0.5">
+                  {e.mood}
+                </span>
+              )}
+            </div>
+            <p className="font-display italic text-foreground/85 text-sm m-0 leading-snug line-clamp-2">{snippet}</p>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
