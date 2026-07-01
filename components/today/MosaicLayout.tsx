@@ -32,7 +32,7 @@ export default function MosaicLayout() {
 
   return (
     <div className="flex flex-col flex-1 overflow-hidden today-surface text-foreground animate-fade-in">
-      <div className="flex-1 overflow-y-auto px-5 pt-safe pt-5 pb-5">
+      <div className="flex-1 overflow-y-auto px-5 pt-safe pt-5 pb-nav">
         <div className="flex justify-between items-start mb-3">
           <div>
             <p className="font-mono text-[10px] text-muted-foreground uppercase tracking-[0.2em]">{dateLabel}</p>

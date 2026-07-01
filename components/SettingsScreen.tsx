@@ -223,7 +223,7 @@ export default function SettingsScreen() {
         <h1 className="font-display italic text-2xl text-parchment-100 leading-tight mt-1">keep the app tuned</h1>
       </header>
 
-      <div className="flex-1 overflow-y-auto px-5 pb-4 space-y-4">
+      <div className="flex-1 overflow-y-auto px-5 pb-nav space-y-4">
         {/* ── Personalize ─────────────────────────────────────── */}
         <section className="card space-y-4">
           <p className="label">Personalize</p>
@@ -440,7 +440,7 @@ export default function SettingsScreen() {
 
       {/* Unsaved-changes save bar */}
       {hasUnsaved && (
-        <div className="flex-shrink-0 border-t border-ink-700 bg-ink-900/95 backdrop-blur px-5 py-3 pb-safe flex items-center gap-2">
+        <div className="flex-shrink-0 mb-[4.75rem] md:mb-0 border-t border-ink-700 bg-ink-900/95 backdrop-blur px-5 py-3 pb-safe flex items-center gap-2">
           <p className="flex-1 font-mono text-[11px] text-parchment-500">Unsaved changes</p>
           <button onClick={revertPrefs} className="btn-ghost px-4 py-2 min-h-[40px]">
             Discard

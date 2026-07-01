@@ -70,7 +70,7 @@ export default function DaybreakLayout() {
         </p>
       </header>
 
-      <div className="flex-1 overflow-y-auto px-5 pb-5 pt-2">
+      <div className="flex-1 overflow-y-auto px-5 pb-nav pt-2">
         {editing && (
           <p className="font-mono text-[11px] text-muted-foreground mb-3">
             Drag a card by its handle to reorder · tap hide to remove it.

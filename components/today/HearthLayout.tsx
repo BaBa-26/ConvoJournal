@@ -16,7 +16,7 @@ export default function HearthLayout() {
 
   return (
     <div className="flex flex-col flex-1 overflow-hidden today-surface text-foreground animate-fade-in">
-      <div className="flex-1 overflow-y-auto pb-5">
+      <div className="flex-1 overflow-y-auto pb-nav">
         {/* Hero with radial sun glow */}
         <header className="relative px-5 pt-safe pt-6 pb-5 overflow-hidden flex-shrink-0">
           <div

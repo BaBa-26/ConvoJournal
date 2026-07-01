@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Playfair_Display, DM_Mono } from "next/font/google";
 import SideNav from "@/components/SideNav";
+import BottomNav from "@/components/BottomNav";
 import AuthProvider from "@/components/AuthProvider";
 import PreferencesProvider from "@/components/PreferencesProvider";
 import "./globals.css";
@@ -52,6 +53,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 </div>
               </div>
             </div>
+            <BottomNav />
           </PreferencesProvider>
         </AuthProvider>
       </body>

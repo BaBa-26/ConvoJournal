@@ -50,7 +50,7 @@ export default function DraggableProgressBar({
   };
 
   return (
-    <div className="flex items-center gap-2.5 mt-2 select-none">
+    <div data-no-swipe className="flex items-center gap-2.5 mt-2 select-none">
       <div
         ref={trackRef}
         onClick={handleTrackClick}

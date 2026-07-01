@@ -113,9 +113,9 @@
   }
 
   /* Sticky form footer — transparent so the buttons float smoothly over the page/wallpaper
-     instead of sitting in an opaque box. Just handles stickiness + spacing. */
+     instead of sitting in an opaque box. On mobile it lifts above the floating nav pill. */
   .action-bar {
-    @apply sticky bottom-0 z-10 flex gap-3 pt-4 pb-2;
+    @apply sticky bottom-[4.75rem] md:bottom-0 z-10 flex gap-3 pt-4 pb-2;
   }
 
   /* ─── Cards ────────────────────────────────────────────── */
@@ -191,4 +191,16 @@ html[data-has-bg="true"] .today-surface header p {
 }
 .pt-safe {
   padding-top: env(safe-area-inset-top, 0px);
+}
+
+/* ─── Bottom clearance for the floating mobile nav pill ───
+   Applied to scroll containers so their last content isn't hidden behind the nav.
+   Collapses to normal spacing on desktop, where the nav is a left sidebar instead. */
+.pb-nav {
+  padding-bottom: calc(5.5rem + env(safe-area-inset-bottom, 0px));
+}
+@media (min-width: 768px) {
+  .pb-nav {
+    padding-bottom: 1.5rem;
+  }
 }

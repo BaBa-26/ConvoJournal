@@ -403,7 +403,7 @@ export default function TasksScreen() {
         )}
       </header>
 
-      <div className="flex-1 overflow-y-auto px-5 space-y-3 pb-4">
+      <div className="flex-1 overflow-y-auto px-5 space-y-3 pb-nav">
         {/* Add form */}
         {showAdd && (
           <AddTaskForm onAdd={handleAdd} onCancel={() => setShowAdd(false)} />

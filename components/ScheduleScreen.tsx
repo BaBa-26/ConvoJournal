@@ -661,7 +661,7 @@ export default function ScheduleScreen() {
         </header>
 
         {/* Scrollable body */}
-        <div className="flex-1 overflow-y-auto px-5 pb-6 space-y-4">
+        <div className="flex-1 overflow-y-auto px-5 pb-nav space-y-4">
           <CalendarWidget
             month={month}
             tasks={tasks}

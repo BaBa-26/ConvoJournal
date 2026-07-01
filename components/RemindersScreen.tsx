@@ -215,7 +215,7 @@ export default function RemindersScreen() {
         </div>
       </header>
 
-      <div className="flex-1 overflow-y-auto px-5 space-y-4 pb-4">
+      <div className="flex-1 overflow-y-auto px-5 space-y-4 pb-nav">
         {showAdd && (
           <AddReminderForm onAdd={handleAdd} onCancel={() => setShowAdd(false)} />
         )}

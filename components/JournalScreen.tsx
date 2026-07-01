@@ -169,7 +169,7 @@ function IdlePhase({
       </div>
 
       {/* Entry list */}
-      <div className="flex flex-col gap-3">
+      <div className="flex flex-col gap-3 pb-nav">
         {entries.map(e => (
           <button
             key={e.id}
@@ -270,7 +270,7 @@ function WritingPhase({
       {/* Suggestion strip */}
       <div className="min-h-[32px] flex items-center">
         {suggestions.length > 0 ? (
-          <div className="flex gap-2 overflow-x-auto w-full pb-0.5 scrollbar-none">
+          <div data-no-swipe className="flex gap-2 overflow-x-auto w-full pb-0.5 scrollbar-none">
             {suggestions.map((s) => (
               <button
                 key={s}
@@ -806,7 +806,7 @@ export default function JournalScreen() {
         <header className="flex items-center justify-between px-5 pt-safe pt-5 pb-4 flex-shrink-0">
           <h1 className="font-display italic text-2xl text-parchment-200 leading-none">Journal</h1>
         </header>
-        <div className="flex-1 overflow-y-auto px-5 flex flex-col">
+        <div className="flex-1 overflow-y-auto px-5 pb-nav flex flex-col">
           <EntryDetail entry={selectedEntry} onBack={() => setSelectedEntry(null)} />
         </div>
       </div>
