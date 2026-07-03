@@ -4,6 +4,7 @@ import SideNav from "@/components/SideNav";
 import BottomNav from "@/components/BottomNav";
 import AuthProvider from "@/components/AuthProvider";
 import PreferencesProvider from "@/components/PreferencesProvider";
+import { SpeedInsights } from "@vercel/speed-insights/next";
 import "./globals.css";
 
 const playfair = Playfair_Display({
@@ -56,6 +57,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <BottomNav />
           </PreferencesProvider>
         </AuthProvider>
+        <SpeedInsights />
       </body>
     </html>
   );
