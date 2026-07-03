@@ -6,9 +6,18 @@ import {
 } from "@google/genai";
 import type { AnalysisResult } from "@/types";
 
+interface ActiveGoal {
+  id: string;
+  title: string;
+  unit: string;
+  target: number;
+  current: number;
+}
+
 interface GeminiContext {
   todayISO: string;
   pendingTaskTitles: string[];
+  activeGoals?: ActiveGoal[];
 }
 
 const SYSTEM_PROMPT = `
@@ -50,9 +59,10 @@ NOT tasks:
 priority: "high" if urgent/deadline language; "low" if vague/eventual/aspirational; "medium" otherwise
 dueDate: full ISO 8601 UTC string ONLY if a specific date is explicitly stated. Otherwise omit.
 
-[STEP 2b — GOALS are low-priority tasks]
-Long-term aspirations without a specific near-term step → add to tasks with priority "low", no dueDate.
+[STEP 2b — vague aspirations are low-priority tasks]
+Long-term aspirations WITHOUT a countable target → add to tasks with priority "low", no dueDate.
   ✓ "I want to get fit", "Eventually start my own business", "I'd love to learn Spanish"
+Countable, repeated targets over a period are GOALS instead — see STEP 4.
 
 [STEP 3 — EXTRACT REMINDERS from the FUTURE bucket only]
 A reminder = a scheduled event at a specific time the user needs to attend or act on.
@@ -72,6 +82,27 @@ eventDate: full ISO 8601 UTC string — REQUIRED.
   - Use the stated time on todayISO if "today/this morning/this afternoon/daily" is implied
   - Use T09:00:00.000Z as default time if no clock time is mentioned
   - If an event is described as daily/recurring, create ONE reminder for today
+
+[STEP 4 — GOALS: countable targets over a period]
+A GOAL is a repeated/measurable target the user is tracking, with a COUNT and a UNIT over a PERIOD.
+Emit into "goals" (new goals to create):
+  ✓ "go to the gym every day this week"  → { title: "Go to the gym", unit: "days",  target: 7,   period: "week" }
+  ✓ "read 100 pages this month"          → { title: "Read",          unit: "pages", target: 100, period: "month" }
+  ✓ "meditate 5 times a week"            → { title: "Meditate",      unit: "times", target: 5,   period: "week" }
+  ✓ "run 3 times this week"              → { title: "Run",           unit: "times", target: 3,   period: "week" }
+Rules for new goals:
+  - "every day this week" ⇒ unit "days", target 7. "every day this month" ⇒ unit "days", target 30.
+  - period is "week", "month", or "ongoing". Default "week" if a week is implied, "ongoing" if no period.
+  - unit is a short lowercase noun ("days", "sessions", "times", "pages", "km", "workouts"). Default "times".
+  - target is a positive whole number. If no number and no "every day", DO NOT emit a goal — treat as a low-priority task instead.
+  - Do NOT create a goal that duplicates one already in the [Active Goals] list — increment it instead (below).
+
+Emit into "goalUpdates" ONLY when the entry reports PROGRESS on a goal already in the [Active Goals] list:
+  Given Active Goals like [{ "id": "g1", "title": "Go to the gym", "unit": "days" }]:
+  ✓ "went to the gym today"      → { goalId: "g1", increment: 1 }
+  ✓ "read 30 pages tonight"      → { goalId: <reading goal id>, increment: 30 }
+  ✗ Do NOT invent a goalId. Use ONLY ids present in [Active Goals]. If nothing matches, emit no update.
+  ✗ Do NOT emit an update for a FUTURE intention ("I'll go to the gym tomorrow") — only completed progress counts.
 
 [GENERAL RULES]
 - Do NOT emit tasks/reminders semantically equivalent to anything in the provided pending list
@@ -109,6 +140,30 @@ const RESPONSE_SCHEMA = {
           eventDate:   { type: Type.STRING },
         },
         required: ["title", "eventDate"],
+      },
+    },
+    goals: {
+      type: Type.ARRAY,
+      items: {
+        type: Type.OBJECT,
+        properties: {
+          title:  { type: Type.STRING },
+          unit:   { type: Type.STRING },
+          target: { type: Type.NUMBER },
+          period: { type: Type.STRING },
+        },
+        required: ["title", "target"],
+      },
+    },
+    goalUpdates: {
+      type: Type.ARRAY,
+      items: {
+        type: Type.OBJECT,
+        properties: {
+          goalId:    { type: Type.STRING },
+          increment: { type: Type.NUMBER },
+        },
+        required: ["goalId", "increment"],
       },
     },
   },
@@ -153,8 +208,14 @@ export async function analyzeWithGemini(
   const taskList = context?.pendingTaskTitles?.length
     ? `Existing pending tasks (do not duplicate): ${JSON.stringify(context.pendingTaskTitles)}\n`
     : "";
+  // Expose only the fields the model needs to match/increment goals — never anything writable.
+  const goalList = context?.activeGoals?.length
+    ? `[Active Goals] (increment these via goalUpdates using their exact id; do not duplicate as new goals): ${JSON.stringify(
+        context.activeGoals.map((g) => ({ id: g.id, title: g.title, unit: g.unit, target: g.target, current: g.current })),
+      )}\n`
+    : "";
 
-  const userPrompt = `[Context]\nToday's date: ${todayISO}\n${taskList}\n[Journal Entry]\n${text}`;
+  const userPrompt = `[Context]\nToday's date: ${todayISO}\n${taskList}${goalList}\n[Journal Entry]\n${text}`;
 
   const debug = process.env.GEMINI_DEBUG === "true";
   if (debug) {
@@ -216,6 +277,30 @@ export async function analyzeWithGemini(
         }))
     : [];
 
+  const VALID_PERIODS = new Set(["week", "month", "ongoing"]);
+
+  const goals = Array.isArray(raw.goals)
+    ? (raw.goals as Record<string, unknown>[])
+        .filter((g) => typeof g.title === "string" && g.title.length > 0 && Number.isFinite(Number(g.target)) && Number(g.target) >= 1)
+        .map((g) => ({
+          title:  g.title as string,
+          unit:   typeof g.unit === "string" && g.unit.trim() ? (g.unit as string).trim().slice(0, 30) : "times",
+          target: Math.min(Math.round(Number(g.target)), 100_000),
+          period: (VALID_PERIODS.has(g.period as string) ? g.period : "week") as "week" | "month" | "ongoing",
+        }))
+    : [];
+
+  // Only accept increments that reference a real active-goal id — the model must not invent ids.
+  const activeGoalIds = new Set((context?.activeGoals ?? []).map((g) => g.id));
+  const goalUpdates = Array.isArray(raw.goalUpdates)
+    ? (raw.goalUpdates as Record<string, unknown>[])
+        .filter((u) => typeof u.goalId === "string" && activeGoalIds.has(u.goalId) && Number.isFinite(Number(u.increment)) && Number(u.increment) >= 1)
+        .map((u) => ({
+          goalId:    u.goalId as string,
+          increment: Math.min(Math.round(Number(u.increment)), 100_000),
+        }))
+    : [];
+
   return {
     yesterday: sanitizeField(raw.yesterday),
     today:     sanitizeField(raw.today),
@@ -223,5 +308,7 @@ export async function analyzeWithGemini(
     mood:      sanitizeField(raw.mood),
     tasks,
     reminders,
+    goals,
+    goalUpdates,
   };
 }

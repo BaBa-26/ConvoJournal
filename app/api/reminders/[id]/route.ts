@@ -26,9 +26,10 @@ export async function PATCH(
     const updated = await prisma.reminder.update({
       where: { id: params.id },
       data: {
-        ...(parsed.data.title     !== undefined && { title:     parsed.data.title }),
-        ...(parsed.data.reminded  !== undefined && { reminded:  parsed.data.reminded }),
-        ...(parsed.data.eventDate !== undefined && { eventDate: new Date(parsed.data.eventDate) }),
+        ...(parsed.data.title       !== undefined && { title:       parsed.data.title }),
+        ...(parsed.data.description !== undefined && { description: parsed.data.description ?? null }),
+        ...(parsed.data.reminded    !== undefined && { reminded:    parsed.data.reminded }),
+        ...(parsed.data.eventDate   !== undefined && { eventDate:   new Date(parsed.data.eventDate) }),
       },
     });
     return NextResponse.json(updated);

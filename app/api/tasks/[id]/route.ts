@@ -27,12 +27,14 @@ export async function PATCH(
       completed?: boolean;
       progress?: number;
       title?: string;
+      description?: string | null;
       priority?: "high" | "medium" | "low";
       dueDate?: Date | null;
     } = {};
 
-    if (parsed.data.title    !== undefined) data.title    = parsed.data.title;
-    if (parsed.data.priority !== undefined) data.priority = parsed.data.priority;
+    if (parsed.data.title       !== undefined) data.title       = parsed.data.title;
+    if (parsed.data.description !== undefined) data.description = parsed.data.description ?? null;
+    if (parsed.data.priority    !== undefined) data.priority    = parsed.data.priority;
     if (parsed.data.dueDate  !== undefined) {
       data.dueDate = parsed.data.dueDate ? new Date(parsed.data.dueDate) : null;
     }

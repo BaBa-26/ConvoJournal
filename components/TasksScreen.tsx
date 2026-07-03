@@ -7,6 +7,7 @@ import type { Task, TaskFilter } from "@/types";
 import { loadDemoState, updateDemoState } from "@/lib/demoData";
 import { computeTaskStats } from "@/lib/taskStats";
 import DraggableProgressBar from "@/components/DraggableProgressBar";
+import GoalsSection from "@/components/GoalsSection";
 
 // ─── Shared auth gate ─────────────────────────────────────────────────────────
 
@@ -404,6 +405,11 @@ export default function TasksScreen() {
       </header>
 
       <div className="flex-1 overflow-y-auto px-5 space-y-3 pb-nav">
+        {/* Goals — tracked targets with unit-aware progress */}
+        <GoalsSection />
+
+        <p className="label pt-1">Tasks</p>
+
         {/* Add form */}
         {showAdd && (
           <AddTaskForm onAdd={handleAdd} onCancel={() => setShowAdd(false)} />

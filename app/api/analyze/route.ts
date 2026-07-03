@@ -27,17 +27,33 @@ export async function POST(req: NextRequest) {
       ? new Date().toLocaleDateString("sv-SE", { timeZone: timezone })
       : new Date().toISOString().slice(0, 10);
 
-    // Optional context: pending task dedup for authenticated users
-    let geminiContext = { todayISO, pendingTaskTitles: [] as string[] };
+    // Optional context: pending task dedup + active goals for authenticated users
+    let geminiContext: {
+      todayISO: string;
+      pendingTaskTitles: string[];
+      activeGoals?: { id: string; title: string; unit: string; target: number; current: number }[];
+    } = { todayISO, pendingTaskTitles: [] };
     const session = await getServerSession(authOptions);
     if (session?.user?.id) {
-      const pending = await prisma.task.findMany({
-        where:   { userId: session.user.id, completed: false },
-        select:  { title: true },
-        orderBy: { createdAt: "desc" },
-        take:    50,
-      });
-      geminiContext = { todayISO, pendingTaskTitles: pending.map((t) => t.title) };
+      const [pending, goals] = await Promise.all([
+        prisma.task.findMany({
+          where:   { userId: session.user.id, completed: false },
+          select:  { title: true },
+          orderBy: { createdAt: "desc" },
+          take:    50,
+        }),
+        prisma.goal.findMany({
+          where:   { userId: session.user.id, completed: false },
+          select:  { id: true, title: true, unit: true, target: true, current: true },
+          orderBy: { createdAt: "desc" },
+          take:    30,
+        }),
+      ]);
+      geminiContext = {
+        todayISO,
+        pendingTaskTitles: pending.map((t) => t.title),
+        activeGoals: goals,
+      };
     }
 
     let analysis: AnalysisResult;

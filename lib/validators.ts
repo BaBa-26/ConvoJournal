@@ -9,11 +9,12 @@ export const TaskCreateSchema = z.object({
 });
 
 export const TaskUpdateSchema = z.object({
-  title:     z.string().min(1).max(500).optional(),
-  completed: z.boolean().optional(),
-  progress:  z.number().int().min(0).max(100).optional(),
-  priority:  z.enum(["high", "medium", "low"]).optional(),
-  dueDate:   z.string().datetime({ offset: true }).nullish().optional(),
+  title:       z.string().min(1).max(500).optional(),
+  description: z.string().max(2000).nullish(),
+  completed:   z.boolean().optional(),
+  progress:    z.number().int().min(0).max(100).optional(),
+  priority:    z.enum(["high", "medium", "low"]).optional(),
+  dueDate:     z.string().datetime({ offset: true }).nullish().optional(),
 });
 
 export const ReminderCreateSchema = z.object({
@@ -23,9 +24,27 @@ export const ReminderCreateSchema = z.object({
 });
 
 export const ReminderUpdateSchema = z.object({
-  title:     z.string().min(1).max(500).optional(),
-  reminded:  z.boolean().optional(),
-  eventDate: z.string().datetime({ offset: true }).optional(),
+  title:       z.string().min(1).max(500).optional(),
+  description: z.string().max(2000).nullish(),
+  reminded:    z.boolean().optional(),
+  eventDate:   z.string().datetime({ offset: true }).optional(),
+});
+
+export const GoalCreateSchema = z.object({
+  title:   z.string().min(1, "Title required").max(200),
+  unit:    z.string().min(1).max(30).default("times"),
+  target:  z.number().int().min(1).max(100_000),
+  current: z.number().int().min(0).max(100_000).optional(),
+  period:  z.enum(["week", "month", "ongoing"]).default("week"),
+});
+
+export const GoalUpdateSchema = z.object({
+  title:     z.string().min(1).max(200).optional(),
+  unit:      z.string().min(1).max(30).optional(),
+  target:    z.number().int().min(1).max(100_000).optional(),
+  current:   z.number().int().min(0).max(100_000).optional(),
+  period:    z.enum(["week", "month", "ongoing"]).optional(),
+  completed: z.boolean().optional(),
 });
 
 export const JournalCreateSchema = z.object({
@@ -46,6 +65,16 @@ export const JournalCreateSchema = z.object({
       title:       z.string().max(500),
       description: z.string().max(2000).optional(),
       eventDate:   z.string().datetime({ offset: true }),
+    })).optional(),
+    goals: z.array(z.object({
+      title:  z.string().max(200),
+      unit:   z.string().max(30).default("times"),
+      target: z.number().int().min(1).max(100_000),
+      period: z.enum(["week", "month", "ongoing"]).default("week"),
+    })).optional(),
+    goalUpdates: z.array(z.object({
+      goalId:    z.string().max(50),
+      increment: z.number().int().min(1).max(100_000),
     })).optional(),
   }).optional(),
 });

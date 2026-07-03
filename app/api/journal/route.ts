@@ -99,6 +99,38 @@ export async function POST(req: NextRequest) {
       });
     }
 
+    // Create new goals surfaced by the entry
+    if (analysis?.goals?.length) {
+      await prisma.goal.createMany({
+        data: analysis.goals.map((g) => {
+          const target = Math.max(1, Math.round(g.target));
+          return {
+            title:     g.title,
+            unit:      g.unit || "times",
+            target,
+            current:   0,
+            period:    g.period ?? "week",
+            completed: false,
+            source:    "journal",
+            userId:    auth.userId,
+          };
+        }),
+      });
+    }
+
+    // Apply progress increments against the user's existing goals (ownership re-checked per id)
+    if (analysis?.goalUpdates?.length) {
+      for (const gu of analysis.goalUpdates) {
+        const goal = await prisma.goal.findFirst({ where: { id: gu.goalId, userId: auth.userId } });
+        if (!goal) continue;
+        const next = Math.min(goal.target, goal.current + Math.max(1, Math.round(gu.increment)));
+        await prisma.goal.update({
+          where: { id: goal.id },
+          data:  { current: next, completed: next >= goal.target },
+        });
+      }
+    }
+
     const full = await prisma.journalEntry.findUnique({
       where:   { id: entry.id },
       include: { tasks: true, reminders: true },

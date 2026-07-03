@@ -72,6 +72,7 @@ model User {
   entries        JournalEntry[]
   tasks          Task[]
   reminders      Reminder[]
+  goals          Goal[]
 }
 
 // ─── App models ───────────────────────────────────────────────────────────────
@@ -113,6 +114,24 @@ model Task {
 
   @@index([userId])
   @@index([journalEntryId])
+}
+
+model Goal {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  title     String
+  unit      String   @default("times") // free-form counting unit: "days" | "sessions" | "times" | "pages" | …
+  target    Int      // e.g. 7 (gym every day this week)
+  current   Int      @default(0) // progress toward target; may be edited manually or by journal extraction
+  period    String   @default("week") // "week" | "month" | "ongoing"
+  startDate DateTime @default(now())
+  completed Boolean  @default(false)
+  source    String   @default("manual") // "manual" | "journal"
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
 
 model Reminder {

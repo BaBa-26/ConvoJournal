@@ -1,10 +1,11 @@
-import type { JournalEntry, ParsedEntry, Reminder, Task, UserPreferences } from "@/types";
+import type { Goal, JournalEntry, ParsedEntry, Reminder, Task, UserPreferences } from "@/types";
 import { DEFAULT_PREFERENCES } from "@/types";
 
 export interface DemoState {
   tasks: Task[];
   reminders: Reminder[];
   entries: JournalEntry[];
+  goals: Goal[];
   preferences: UserPreferences;
 }
 
@@ -39,6 +40,10 @@ function cloneTask(task: Task): Task {
 
 function cloneReminder(reminder: Reminder): Reminder {
   return { ...reminder };
+}
+
+function cloneGoal(goal: Goal): Goal {
+  return { ...goal };
 }
 
 function cloneEntry(entry: JournalEntry): JournalEntry {
@@ -188,6 +193,34 @@ export function createDemoState(): DemoState {
     reminders: [],
   }));
 
+  const gymGoal: Goal = {
+    id: "demo-goal-gym",
+    title: "Go to the gym",
+    unit: "days",
+    target: 7,
+    current: 3,
+    period: "week",
+    startDate: makeEntryDate(-2),
+    completed: false,
+    source: "journal",
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  const readGoal: Goal = {
+    id: "demo-goal-read",
+    title: "Read",
+    unit: "pages",
+    target: 100,
+    current: 40,
+    period: "month",
+    startDate: makeEntryDate(-5),
+    completed: false,
+    source: "manual",
+    createdAt: now,
+    updatedAt: now,
+  };
+
   return {
     tasks: [
       cloneTask(journalTask),
@@ -197,6 +230,7 @@ export function createDemoState(): DemoState {
     ],
     reminders: [cloneReminder(reminderToday), cloneReminder(reminderTomorrow)],
     entries: [todayEntry, yesterdayEntry, olderEntry, ...fillerEntries],
+    goals: [cloneGoal(gymGoal), cloneGoal(readGoal)],
     preferences: { ...DEFAULT_PREFERENCES },
   };
 }
@@ -231,6 +265,8 @@ export function loadDemoState(): DemoState {
       tasks: parsed.tasks.map(cloneTask),
       reminders: parsed.reminders.map(cloneReminder),
       entries: parsed.entries.map(cloneEntry),
+      // Backfill goals for blobs saved before this slice existed.
+      goals: (parsed.goals ?? []).map(cloneGoal),
       // Backfill preferences for blobs saved before this slice existed.
       preferences: { ...DEFAULT_PREFERENCES, ...(parsed.preferences ?? {}) },
     };
@@ -290,6 +326,22 @@ export function appendDemoJournalEntry(rawContent: string, parsed: ParsedEntry):
       createdAt: now,
     }));
 
+    // New goals surfaced by the entry (increment of existing demo goals isn't available
+    // server-side in try-mode, so only creation is supported here).
+    const newGoals: Goal[] = (parsed.goals ?? []).map((goal) => ({
+      id: makeId("demo-goal"),
+      title: goal.title,
+      unit: goal.unit || "times",
+      target: Math.max(1, Math.round(goal.target)),
+      current: 0,
+      period: goal.period ?? "week",
+      startDate: now,
+      completed: false,
+      source: "journal",
+      createdAt: now,
+      updatedAt: now,
+    }));
+
     const entry: JournalEntry = {
       id: entryId,
       date: now,
@@ -309,6 +361,7 @@ export function appendDemoJournalEntry(rawContent: string, parsed: ParsedEntry):
       tasks: [...nestedTasks, ...state.tasks],
       reminders: [...nestedReminders, ...state.reminders],
       entries: [entry, ...state.entries],
+      goals: [...newGoals, ...state.goals],
     };
   });
 }

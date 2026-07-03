@@ -141,25 +141,55 @@ interface NewItem {
 }
 
 function AddItemModal({
-  defaultDate, onSave, onClose,
+  defaultDate, editItem, onSave, onClose,
 }: {
   defaultDate: Date;
-  onSave: (item: NewItem) => Promise<void>;
+  editItem?: { kind: "task" | "reminder"; data: Task | Reminder } | null;
+  onSave: (item: NewItem, editId?: string) => Promise<void>;
   onClose: () => void;
 }) {
-  const [type,        setType]        = useState<"task" | "reminder">("task");
-  const [title,       setTitle]       = useState("");
-  const [date,        setDate]        = useState(format(defaultDate, "yyyy-MM-dd"));
-  const [time,        setTime]        = useState("09:00");
-  const [priority,    setPriority]    = useState("medium");
-  const [description, setDescription] = useState("");
+  const isEdit = !!editItem;
+  // Derive initial values from the item being edited (if any).
+  const initial = (() => {
+    if (!editItem) return null;
+    if (editItem.kind === "task") {
+      const t = editItem.data as Task;
+      return {
+        type: "task" as const,
+        title: t.title,
+        date: t.dueDate ? format(parseISO(t.dueDate), "yyyy-MM-dd") : format(defaultDate, "yyyy-MM-dd"),
+        time: "09:00",
+        priority: t.priority,
+        description: t.description ?? "",
+      };
+    }
+    const r = editItem.data as Reminder;
+    return {
+      type: "reminder" as const,
+      title: r.title,
+      date: format(parseISO(r.eventDate), "yyyy-MM-dd"),
+      time: format(parseISO(r.eventDate), "HH:mm"),
+      priority: "medium",
+      description: r.description ?? "",
+    };
+  })();
+
+  const [type,        setType]        = useState<"task" | "reminder">(initial?.type ?? "task");
+  const [title,       setTitle]       = useState(initial?.title ?? "");
+  const [date,        setDate]        = useState(initial?.date ?? format(defaultDate, "yyyy-MM-dd"));
+  const [time,        setTime]        = useState(initial?.time ?? "09:00");
+  const [priority,    setPriority]    = useState(initial?.priority ?? "medium");
+  const [description, setDescription] = useState(initial?.description ?? "");
   const [saving,      setSaving]      = useState(false);
 
   const handleSubmit = async () => {
     if (!title.trim()) return;
     setSaving(true);
     try {
-      await onSave({ type, title: title.trim(), date, time, priority, description: description.trim() });
+      await onSave(
+        { type, title: title.trim(), date, time, priority, description: description.trim() },
+        editItem?.data.id,
+      );
       onClose();
     } finally {
       setSaving(false);
@@ -185,17 +215,19 @@ function AddItemModal({
           </button>
         </div>
 
-        {/* Type toggle */}
+        {/* Type toggle — locked when editing (a task and reminder live in different tables) */}
         <div className="flex gap-2">
           {(["task", "reminder"] as const).map((t) => (
             <button
               key={t}
-              onClick={() => setType(t)}
+              onClick={() => !isEdit && setType(t)}
+              disabled={isEdit && type !== t}
               className={`flex-1 py-2 rounded-lg font-mono text-[11px] uppercase tracking-wider
                           border transition-all focus:outline-none
+                          ${isEdit ? "cursor-default" : ""}
                           ${type === t
                             ? "bg-gold/10 border-gold/40 text-parchment-200"
-                            : "border-ink-700 text-parchment-700 hover:border-ink-600"}`}
+                            : `border-ink-700 text-parchment-700 ${isEdit ? "opacity-30" : "hover:border-ink-600"}`}`}
             >
               {t === "task" ? "◈ task" : "◎ reminder"}
             </button>
@@ -264,7 +296,7 @@ function AddItemModal({
           disabled={!title.trim() || saving}
           className="btn-primary w-full disabled:opacity-40 disabled:cursor-not-allowed"
         >
-          {saving ? "Adding…" : `Add ${type}`}
+          {saving ? "Saving…" : isEdit ? "Save changes" : `Add ${type}`}
         </button>
       </div>
     </div>
@@ -274,13 +306,15 @@ function AddItemModal({
 // ─── Day Panel ─────────────────────────────────────────────────────────────────
 
 function DayPanel({
-  day, tasks, reminders, onAddItem, onToggleTask, onDeleteTask, onDeleteReminder,
+  day, tasks, reminders, onAddItem, onToggleTask, onEditTask, onEditReminder, onDeleteTask, onDeleteReminder,
 }: {
   day: Date;
   tasks: Task[];
   reminders: Reminder[];
   onAddItem: () => void;
   onToggleTask: (id: string, completed: boolean) => void;
+  onEditTask: (task: Task) => void;
+  onEditReminder: (reminder: Reminder) => void;
   onDeleteTask: (id: string) => void;
   onDeleteReminder: (id: string) => void;
 }) {
@@ -317,6 +351,7 @@ function DayPanel({
             key={task.id}
             task={task}
             onToggle={onToggleTask}
+            onEdit={onEditTask}
             onDelete={onDeleteTask}
           />
         ))}
@@ -324,6 +359,7 @@ function DayPanel({
           <ReminderRow
             key={reminder.id}
             reminder={reminder}
+            onEdit={onEditReminder}
             onDelete={onDeleteReminder}
             showTime
           />
@@ -335,11 +371,29 @@ function DayPanel({
 
 // ─── Shared row components ─────────────────────────────────────────────────────
 
+// Small pencil-edit control shared by both row types.
+function EditButton({ onClick, label }: { onClick: () => void; label: string }) {
+  return (
+    <button
+      onClick={onClick}
+      aria-label={label}
+      className="text-parchment-800 hover:text-parchment-400 transition-colors focus:outline-none flex-shrink-0"
+    >
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none"
+           stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M12 20h9" />
+        <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+      </svg>
+    </button>
+  );
+}
+
 function TaskRow({
-  task, onToggle, onDelete,
+  task, onToggle, onEdit, onDelete,
 }: {
   task: Task;
   onToggle: (id: string, completed: boolean) => void;
+  onEdit: (task: Task) => void;
   onDelete: (id: string) => void;
 }) {
   return (
@@ -361,6 +415,7 @@ function TaskRow({
       <p className={`flex-1 font-mono text-sm ${task.completed ? "line-through text-parchment-700" : "text-parchment-300"}`}>
         {task.title}
       </p>
+      <EditButton onClick={() => onEdit(task)} label="Edit task" />
       <button
         onClick={() => onDelete(task.id)}
         className="text-parchment-800 hover:text-priority-high transition-colors font-mono text-xs focus:outline-none"
@@ -372,9 +427,10 @@ function TaskRow({
 }
 
 function ReminderRow({
-  reminder, onDelete, showTime = false,
+  reminder, onEdit, onDelete, showTime = false,
 }: {
   reminder: Reminder;
+  onEdit: (reminder: Reminder) => void;
   onDelete: (id: string) => void;
   showTime?: boolean;
 }) {
@@ -389,6 +445,7 @@ function ReminderRow({
           </p>
         )}
       </div>
+      <EditButton onClick={() => onEdit(reminder)} label="Edit reminder" />
       <button
         onClick={() => onDelete(reminder.id)}
         className="text-parchment-800 hover:text-priority-high transition-colors font-mono text-xs focus:outline-none"
@@ -406,11 +463,13 @@ type FeedItem =
   | { kind: "reminder"; data: Reminder; date: Date };
 
 function UpcomingFeed({
-  tasks, reminders, onToggleTask, onDeleteTask, onDeleteReminder,
+  tasks, reminders, onToggleTask, onEditTask, onEditReminder, onDeleteTask, onDeleteReminder,
 }: {
   tasks: Task[];
   reminders: Reminder[];
   onToggleTask: (id: string, completed: boolean) => void;
+  onEditTask: (task: Task) => void;
+  onEditReminder: (reminder: Reminder) => void;
   onDeleteTask: (id: string) => void;
   onDeleteReminder: (id: string) => void;
 }) {
@@ -457,12 +516,14 @@ function UpcomingFeed({
                   key={item.data.id}
                   task={item.data}
                   onToggle={onToggleTask}
+                  onEdit={onEditTask}
                   onDelete={onDeleteTask}
                 />
               ) : (
                 <ReminderRow
                   key={item.data.id}
                   reminder={item.data}
+                  onEdit={onEditReminder}
                   onDelete={onDeleteReminder}
                   showTime
                 />
@@ -481,6 +542,7 @@ function UpcomingFeed({
                 key={task.id}
                 task={task}
                 onToggle={onToggleTask}
+                onEdit={onEditTask}
                 onDelete={onDeleteTask}
               />
             ))}
@@ -501,6 +563,7 @@ export default function ScheduleScreen() {
   const [reminders,   setReminders]   = useState<Reminder[]>([]);
   const [loading,     setLoading]     = useState(true);
   const [modalDay,    setModalDay]    = useState<Date | null>(null);
+  const [editItem,    setEditItem]    = useState<{ kind: "task" | "reminder"; data: Task | Reminder } | null>(null);
 
   const fetchAll = useCallback(async () => {
     if (status === "loading") return;
@@ -630,6 +693,53 @@ export default function ScheduleScreen() {
     }
   }, [session]);
 
+  const handleEditTask     = useCallback((task: Task)         => setEditItem({ kind: "task",     data: task }),     []);
+  const handleEditReminder = useCallback((reminder: Reminder) => setEditItem({ kind: "reminder", data: reminder }), []);
+
+  const handleUpdateItem = useCallback(async (item: NewItem, editId: string) => {
+    if (item.type === "task") {
+      const dueDate = item.date ? new Date(item.date + "T12:00:00").toISOString() : null;
+      const patch = { title: item.title, priority: item.priority, dueDate, description: item.description || null };
+      const apply = (t: Task): Task => ({
+        ...t, title: item.title, priority: item.priority as Task["priority"], dueDate, description: item.description || null,
+      });
+      if (!session) {
+        setTasks(prev => prev.map(t => t.id === editId ? apply(t) : t));
+        updateDemoState((state) => ({ ...state, tasks: state.tasks.map(t => t.id === editId ? apply(t) : t) }));
+        return;
+      }
+      setTasks(prev => prev.map(t => t.id === editId ? apply(t) : t)); // optimistic
+      const res = await fetch(`/api/tasks/${editId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch),
+      });
+      if (res.ok) { const updated = await res.json(); setTasks(prev => prev.map(t => t.id === editId ? updated : t)); }
+    } else {
+      const eventDate = new Date(item.date + "T" + item.time + ":00").toISOString();
+      const patch = { title: item.title, eventDate, description: item.description || null };
+      const apply = (r: Reminder): Reminder => ({ ...r, title: item.title, eventDate, description: item.description || null });
+      if (!session) {
+        setReminders(prev => prev.map(r => r.id === editId ? apply(r) : r));
+        updateDemoState((state) => ({ ...state, reminders: state.reminders.map(r => r.id === editId ? apply(r) : r) }));
+        return;
+      }
+      setReminders(prev => prev.map(r => r.id === editId ? apply(r) : r)); // optimistic
+      const res = await fetch(`/api/reminders/${editId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch),
+      });
+      if (res.ok) { const updated = await res.json(); setReminders(prev => prev.map(r => r.id === editId ? updated : r)); }
+    }
+  }, [session]);
+
+  // Modal entry point — routes to create or update based on whether an id is supplied.
+  const handleSaveItem = useCallback(async (item: NewItem, editId?: string) => {
+    if (editId) return handleUpdateItem(item, editId);
+    return handleAddItem(item);
+  }, [handleUpdateItem, handleAddItem]);
+
   if (loading) {
     return (
       <div className="flex flex-col flex-1 items-center justify-center">
@@ -678,6 +788,8 @@ export default function ScheduleScreen() {
             reminders={reminders}
             onAddItem={() => setModalDay(selectedDay)}
             onToggleTask={handleToggleTask}
+            onEditTask={handleEditTask}
+            onEditReminder={handleEditReminder}
             onDeleteTask={handleDeleteTask}
             onDeleteReminder={handleDeleteReminder}
           />
@@ -687,17 +799,20 @@ export default function ScheduleScreen() {
             tasks={tasks}
             reminders={reminders}
             onToggleTask={handleToggleTask}
+            onEditTask={handleEditTask}
+            onEditReminder={handleEditReminder}
             onDeleteTask={handleDeleteTask}
             onDeleteReminder={handleDeleteReminder}
           />
         </div>
       </div>
 
-      {modalDay && (
+      {(modalDay || editItem) && (
         <AddItemModal
-          defaultDate={modalDay}
-          onSave={handleAddItem}
-          onClose={() => setModalDay(null)}
+          defaultDate={editItem ? selectedDay : (modalDay as Date)}
+          editItem={editItem}
+          onSave={handleSaveItem}
+          onClose={() => { setModalDay(null); setEditItem(null); }}
         />
       )}
     </>

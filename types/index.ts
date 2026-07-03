@@ -24,6 +24,22 @@ export interface Reminder {
   createdAt: string;
 }
 
+export type GoalPeriod = "week" | "month" | "ongoing";
+
+export interface Goal {
+  id: string;
+  title: string;
+  unit: string;         // counting unit: "days" | "sessions" | "times" | "pages" | …
+  target: number;       // e.g. 7
+  current: number;      // progress toward target
+  period: GoalPeriod;
+  startDate: string;    // ISO string
+  completed: boolean;
+  source: string;       // "manual" | "journal"
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface JournalEntry {
   id: string;
   date: string;         // ISO string
@@ -47,6 +63,20 @@ export interface ParsedEntry {
   mood?: string;
   tasks: ExtractedTask[];
   reminders: ExtractedReminder[];
+  goals?: ExtractedGoal[];        // brand-new goals to create from the entry
+  goalUpdates?: GoalUpdate[];     // increments against the user's existing active goals
+}
+
+export interface ExtractedGoal {
+  title: string;
+  unit: string;
+  target: number;
+  period: GoalPeriod;
+}
+
+export interface GoalUpdate {
+  goalId: string;    // id of an existing active goal
+  increment: number; // how much progress the entry adds (in the goal's unit)
 }
 
 export interface ExtractedTask {
