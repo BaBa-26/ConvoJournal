@@ -206,7 +206,7 @@ export default function RemindersScreen() {
           </div>
           <button
             onClick={() => setShowAdd((s) => !s)}
-            className="w-11 h-11 rounded-full border border-gold/40 flex items-center justify-center
+            className="mr-12 md:mr-0 w-11 h-11 rounded-full border border-gold/40 flex items-center justify-center
                        text-gold hover:bg-gold/10 transition-all active:scale-95 focus:outline-none"
             aria-label="Add reminder"
           >

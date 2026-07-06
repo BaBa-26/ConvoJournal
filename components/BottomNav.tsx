@@ -10,7 +10,7 @@ const tabs = [
   { href: "/",         shape: "circle",   label: "Today"    },
   { href: "/journal",  shape: "r-square", label: "Journal"  },
   { href: "/schedule", shape: "square",   label: "Calendar" },
-  { href: "/tasks",    shape: "diamond",  label: "Goals"    },
+  { href: "/tasks",    shape: "diamond",  label: "To-Do's"  },
 ];
 
 // Routes that shouldn't show the app nav.

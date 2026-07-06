@@ -822,10 +822,15 @@ export default function JournalScreen() {
           <p className="font-mono text-[10px] text-parchment-700 mt-1 tracking-widest uppercase">
             {format(new Date(), "MMM d, yyyy")}
           </p>
+          {!session && (
+            <p className="font-mono text-[9px] text-parchment-700/90 mt-1.5 tracking-wide">
+              Sample data · saved only on this device
+            </p>
+          )}
         </div>
         {/* Phase indicator dots — only shown when in an active phase */}
         {phase !== "idle" && (
-          <div className="flex gap-1.5">
+          <div className="flex gap-1.5 mr-12 md:mr-0">
             {(["idle","recording","analyzing","review"] as RecordingPhase[]).map((p) => (
               <span
                 key={p}

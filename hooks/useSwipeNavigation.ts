@@ -32,6 +32,12 @@ export function useSwipeNavigation() {
         active = false;
         return;
       }
+      // Stand down while a modal (save prompt, edit sheet) owns the screen — otherwise a
+      // swipe would navigate away behind the open dialog.
+      if (document.body.dataset.modalOpen) {
+        active = false;
+        return;
+      }
       const el = e.target as HTMLElement | null;
       if (el?.closest?.("[data-no-swipe]")) {
         active = false;

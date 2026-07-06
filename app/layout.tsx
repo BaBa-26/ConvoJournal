@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Playfair_Display, DM_Mono } from "next/font/google";
 import SideNav from "@/components/SideNav";
 import BottomNav from "@/components/BottomNav";
+import ProfileButton from "@/components/ProfileButton";
 import AuthProvider from "@/components/AuthProvider";
 import PreferencesProvider from "@/components/PreferencesProvider";
 import { SpeedInsights } from "@vercel/speed-insights/next";
@@ -54,6 +55,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 </div>
               </div>
             </div>
+            <ProfileButton />
             <BottomNav />
           </PreferencesProvider>
         </AuthProvider>

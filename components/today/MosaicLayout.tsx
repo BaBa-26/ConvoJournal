@@ -42,7 +42,7 @@ export default function MosaicLayout() {
           </div>
           <button
             onClick={toggleEditing}
-            className={`flex-shrink-0 rounded-lg px-3 py-2 font-mono text-[9px] uppercase tracking-[0.12em] border transition-colors ${
+            className={`mr-12 md:mr-0 flex-shrink-0 rounded-lg px-3 py-2 font-mono text-[9px] uppercase tracking-[0.12em] border transition-colors ${
               editing ? "bg-accent text-onaccent border-accent" : "bg-muted text-muted-foreground border-border"
             }`}
           >

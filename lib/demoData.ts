@@ -7,9 +7,23 @@ export interface DemoState {
   entries: JournalEntry[];
   goals: Goal[];
   preferences: UserPreferences;
+  // Seed provenance — used to keep the demo pristine & consistent across visits.
+  seedVersion: number;
+  seedDay: string; // YYYY-MM-DD the seed was anchored to (local time)
 }
 
 export const DEMO_STORAGE_KEY = "progress-demo-state-v1";
+
+// Bump to force every device back to a fresh seed after the seed content changes.
+export const DEMO_SEED_VERSION = 4;
+
+// Local-time day key. The seed reseeds when this rolls over so every visitor keeps seeing the
+// same small set of sample entries, anchored to *their* today (streak/heatmap stay correct).
+function todayKey(): string {
+  const d = new Date();
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
 
 export const DEMO_PROFILE = {
   name: "Demo Writer",
@@ -177,16 +191,66 @@ export function createDemoState(): DemoState {
 
   // Filler entries so the streak/heatmap has a real run of consecutive days.
   // Combined with today/-1/-3 above this yields an unbroken 0..-6 streak, then a gap.
-  const moods = ["focused", "calm", "tired", "bright", "steady"];
-  const fillerEntries: JournalEntry[] = [-2, -4, -5, -6, -9, -10].map((offset, i) => ({
-    id: `demo-entry-filler-${Math.abs(offset)}`,
-    date: makeEntryDate(offset),
-    rawContent:
-      "A short reflection — kept the momentum, wrote a few lines, and noted what to carry into tomorrow.",
-    yesterday: "Closed a couple of loops.",
-    today: "Stayed with the work and kept it calm.",
-    tomorrow: "Pick the most useful thing and start there.",
-    mood: moods[i % moods.length],
+  // Each carries distinct, believable content so the history doesn't read as spam.
+  const fillerContent: {
+    offset: number;
+    mood: string;
+    yesterday: string;
+    today: string;
+    tomorrow: string;
+    rawContent: string;
+  }[] = [
+    {
+      offset: -2, mood: "focused",
+      yesterday: "Wrapped the calendar refactor and cleared the review queue.",
+      today: "Keep today lighter — one deep task, then a walk.",
+      tomorrow: "Draft the weekly digest copy.",
+      rawContent: "Solid day. Shipped the calendar edits and stepped away before I got tired.",
+    },
+    {
+      offset: -4, mood: "tired",
+      yesterday: "Long call with the team — lots of ideas, no decisions.",
+      today: "Trim the scope and pick the one thing that matters.",
+      tomorrow: "Prototype the mood filter.",
+      rawContent: "Felt scattered today. Too many tabs open, literally and mentally.",
+    },
+    {
+      offset: -5, mood: "calm",
+      yesterday: "Read for an hour instead of scrolling — small win.",
+      today: "Carry that calm into the afternoon block.",
+      tomorrow: "Call Mom back.",
+      rawContent: "Quiet morning. The reading habit is starting to stick.",
+    },
+    {
+      offset: -6, mood: "bright",
+      yesterday: "Fixed the reminders bug that had been nagging me for days.",
+      today: "Celebrate a little, then start the next thing fresh.",
+      tomorrow: "Sketch the goals dashboard.",
+      rawContent: "Relief — that bug is finally gone and the tests are green.",
+    },
+    {
+      offset: -9, mood: "steady",
+      yesterday: "Rest day. Didn't touch the laptop and don't regret it.",
+      today: "Ease back in gently — inbox, then one task.",
+      tomorrow: "Plan the week properly this time.",
+      rawContent: "Needed the break. Back today with a clearer head.",
+    },
+    {
+      offset: -10, mood: "focused",
+      yesterday: "Mapped out the next two weeks on paper.",
+      today: "Follow the plan I made — resist the urge to replan.",
+      tomorrow: "Ship something small and visible.",
+      rawContent: "Planning day. Feels good to see the whole shape of it.",
+    },
+  ];
+  const fillerEntries: JournalEntry[] = fillerContent.map((c) => ({
+    id: `demo-entry-filler-${Math.abs(c.offset)}`,
+    date: makeEntryDate(c.offset),
+    rawContent: c.rawContent,
+    yesterday: c.yesterday,
+    today: c.today,
+    tomorrow: c.tomorrow,
+    mood: c.mood,
     createdAt: now,
     updatedAt: now,
     tasks: [],
@@ -221,6 +285,50 @@ export function createDemoState(): DemoState {
     updatedAt: now,
   };
 
+  // Extra goals whose whole point is to show each is counted in its *own* unit + period:
+  // days · pages · sessions · km · hours, across week / month / ongoing.
+  const meditateGoal: Goal = {
+    id: "demo-goal-meditate",
+    title: "Meditate",
+    unit: "sessions",
+    target: 5,
+    current: 2,
+    period: "week",
+    startDate: makeEntryDate(-1),
+    completed: false,
+    source: "journal",
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  const runGoal: Goal = {
+    id: "demo-goal-run",
+    title: "Run",
+    unit: "km",
+    target: 30,
+    current: 12,
+    period: "month",
+    startDate: makeEntryDate(-6),
+    completed: false,
+    source: "manual",
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  const guitarGoal: Goal = {
+    id: "demo-goal-guitar",
+    title: "Practice guitar",
+    unit: "hours",
+    target: 40,
+    current: 9,
+    period: "ongoing",
+    startDate: makeEntryDate(-10),
+    completed: false,
+    source: "manual",
+    createdAt: now,
+    updatedAt: now,
+  };
+
   return {
     tasks: [
       cloneTask(journalTask),
@@ -230,8 +338,16 @@ export function createDemoState(): DemoState {
     ],
     reminders: [cloneReminder(reminderToday), cloneReminder(reminderTomorrow)],
     entries: [todayEntry, yesterdayEntry, olderEntry, ...fillerEntries],
-    goals: [cloneGoal(gymGoal), cloneGoal(readGoal)],
+    goals: [
+      cloneGoal(gymGoal),
+      cloneGoal(readGoal),
+      cloneGoal(meditateGoal),
+      cloneGoal(runGoal),
+      cloneGoal(guitarGoal),
+    ],
     preferences: { ...DEFAULT_PREFERENCES },
+    seedVersion: DEMO_SEED_VERSION,
+    seedDay: todayKey(),
   };
 }
 
@@ -261,6 +377,15 @@ export function loadDemoState(): DemoState {
       return seed;
     }
 
+    // Reseed when the stored blob is from an older seed version or a previous day, so the demo
+    // never drifts/staleness-accumulates: every visitor sees the same pristine set anchored to
+    // today. Same-day edits (appendDemoJournalEntry) keep the anchor and survive until midnight.
+    if (parsed.seedVersion !== DEMO_SEED_VERSION || parsed.seedDay !== todayKey()) {
+      const seed = createDemoState();
+      window.localStorage.setItem(DEMO_STORAGE_KEY, JSON.stringify(seed));
+      return seed;
+    }
+
     return {
       tasks: parsed.tasks.map(cloneTask),
       reminders: parsed.reminders.map(cloneReminder),
@@ -269,6 +394,8 @@ export function loadDemoState(): DemoState {
       goals: (parsed.goals ?? []).map(cloneGoal),
       // Backfill preferences for blobs saved before this slice existed.
       preferences: { ...DEFAULT_PREFERENCES, ...(parsed.preferences ?? {}) },
+      seedVersion: DEMO_SEED_VERSION,
+      seedDay: parsed.seedDay,
     };
   } catch {
     const seed = createDemoState();

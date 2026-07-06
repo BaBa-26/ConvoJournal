@@ -225,12 +225,15 @@ function AddTaskForm({ onAdd, onCancel }: { onAdd: (t: Partial<Task>) => void; o
 
 // ─── Main screen ──────────────────────────────────────────────────────────────
 
+type TabKey = "goals" | "tasks";
+
 export default function TasksScreen() {
   const { data: session, status } = useSession();
   const [tasks, setTasks]       = useState<Task[]>([]);
   const [filter, setFilter]     = useState<TaskFilter>("pending");
   const [loading, setLoading]   = useState(true);
   const [showAdd, setShowAdd]   = useState(false);
+  const [tab, setTab]           = useState<TabKey>("goals");
 
   const fetchTasks = useCallback(async () => {
     if (status === "loading") return;
@@ -356,24 +359,46 @@ export default function TasksScreen() {
       <header className="px-5 pt-safe pt-5 pb-4 flex-shrink-0">
         <div className="flex items-start justify-between">
           <div>
-            <h1 className="font-display text-2xl text-parchment-200">Goals</h1>
+            <h1 className="font-display text-2xl text-parchment-200">To-Do&apos;s</h1>
             <p className="font-mono text-[10px] text-parchment-700 mt-1 tracking-widest uppercase">
-              {pending} pending
+              {tab === "goals" ? "tracked targets" : `${pending} pending`}
             </p>
           </div>
-          {/* Add button */}
-          <button
-            onClick={() => setShowAdd((s) => !s)}
-            className="w-11 h-11 rounded-full border border-accent/40 flex items-center justify-center
-                       text-accent hover:bg-accent/10 transition-all active:scale-95 focus:outline-none"
-            aria-label="Add task"
-          >
-            <span className="text-xl leading-none">{showAdd ? "×" : "+"}</span>
-          </button>
+          {/* Add button — only for Tasks (Goals has its own add control) */}
+          {tab === "tasks" && (
+            <button
+              onClick={() => setShowAdd((s) => !s)}
+              className="mr-12 md:mr-0 w-11 h-11 rounded-full border border-accent/40 flex items-center justify-center
+                         text-accent hover:bg-accent/10 transition-all active:scale-95 focus:outline-none"
+              aria-label="Add task"
+            >
+              <span className="text-xl leading-none">{showAdd ? "×" : "+"}</span>
+            </button>
+          )}
         </div>
 
-        {/* Progress overview — completion bar + priority breakdown */}
-        {!loading && stats.total > 0 && (
+        {/* Goals / Tasks switcher */}
+        <div className="mt-4 flex gap-1.5 bg-ink-900 rounded-xl p-1">
+          {(["goals", "tasks"] as TabKey[]).map((t) => (
+            <button
+              key={t}
+              onClick={() => setTab(t)}
+              className={`
+                flex-1 py-2 rounded-lg text-[10px] font-mono uppercase tracking-widest
+                transition-all duration-150 min-h-[38px]
+                ${tab === t
+                  ? "bg-ink-700 text-parchment-200 shadow-sm"
+                  : "text-parchment-700 hover:text-parchment-500"
+                }
+              `}
+            >
+              {t}
+            </button>
+          ))}
+        </div>
+
+        {/* Task progress overview — only under the Tasks tab */}
+        {tab === "tasks" && !loading && stats.total > 0 && (
           <div className="mt-4 bg-ink-900 border border-ink-700 rounded-xl p-3.5 space-y-2.5">
             <div className="flex items-center justify-between">
               <span className="font-mono text-[10px] uppercase tracking-widest text-parchment-700">
@@ -405,61 +430,63 @@ export default function TasksScreen() {
       </header>
 
       <div className="flex-1 overflow-y-auto px-5 space-y-3 pb-nav">
-        {/* Goals — tracked targets with unit-aware progress */}
-        <GoalsSection />
-
-        <p className="label pt-1">Tasks</p>
-
-        {/* Add form */}
-        {showAdd && (
-          <AddTaskForm onAdd={handleAdd} onCancel={() => setShowAdd(false)} />
-        )}
-
-        {/* Filter pills */}
-        <div className="flex gap-1.5 bg-ink-900 rounded-xl p-1">
-          {(["all", "pending", "completed"] as TaskFilter[]).map((f) => (
-            <button
-              key={f}
-              onClick={() => setFilter(f)}
-              className={`
-                flex-1 py-2 rounded-lg text-[10px] font-mono uppercase tracking-widest
-                transition-all duration-150 min-h-[36px]
-                ${filter === f
-                  ? "bg-ink-700 text-parchment-200 shadow-sm"
-                  : "text-parchment-700 hover:text-parchment-500"
-                }
-              `}
-            >
-              {f}
-            </button>
-          ))}
-        </div>
-
-        {/* List */}
-        {loading ? (
-          <div className="text-center py-16">
-            <p className="font-mono text-xs text-parchment-700 tracking-widest">loading…</p>
-          </div>
-        ) : filtered.length === 0 ? (
-          <div className="text-center py-16 space-y-2">
-            <p className="font-mono text-2xl text-parchment-800">◈</p>
-            <p className="font-mono text-xs text-parchment-700 tracking-wide">
-              {filter === "pending" ? "nothing pending" :
-               filter === "completed" ? "nothing completed yet" : "no tasks yet"}
-            </p>
-          </div>
+        {tab === "goals" ? (
+          /* Goals — tracked targets with unit-aware progress */
+          <GoalsSection />
         ) : (
-          <div className="space-y-2 animate-fade-in">
-            {filtered.map((task) => (
-              <TaskRow
-                key={task.id}
-                task={task}
-                onToggle={handleToggle}
-                onDelete={handleDelete}
-                onProgressCommit={handleProgressCommit}
-              />
-            ))}
-          </div>
+          <>
+            {/* Add form */}
+            {showAdd && (
+              <AddTaskForm onAdd={handleAdd} onCancel={() => setShowAdd(false)} />
+            )}
+
+            {/* Filter pills */}
+            <div className="flex gap-1.5 bg-ink-900 rounded-xl p-1">
+              {(["all", "pending", "completed"] as TaskFilter[]).map((f) => (
+                <button
+                  key={f}
+                  onClick={() => setFilter(f)}
+                  className={`
+                    flex-1 py-2 rounded-lg text-[10px] font-mono uppercase tracking-widest
+                    transition-all duration-150 min-h-[36px]
+                    ${filter === f
+                      ? "bg-ink-700 text-parchment-200 shadow-sm"
+                      : "text-parchment-700 hover:text-parchment-500"
+                    }
+                  `}
+                >
+                  {f}
+                </button>
+              ))}
+            </div>
+
+            {/* List */}
+            {loading ? (
+              <div className="text-center py-16">
+                <p className="font-mono text-xs text-parchment-700 tracking-widest">loading…</p>
+              </div>
+            ) : filtered.length === 0 ? (
+              <div className="text-center py-16 space-y-2">
+                <p className="font-mono text-2xl text-parchment-800">◈</p>
+                <p className="font-mono text-xs text-parchment-700 tracking-wide">
+                  {filter === "pending" ? "nothing pending" :
+                   filter === "completed" ? "nothing completed yet" : "no tasks yet"}
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-2 animate-fade-in">
+                {filtered.map((task) => (
+                  <TaskRow
+                    key={task.id}
+                    task={task}
+                    onToggle={handleToggle}
+                    onDelete={handleDelete}
+                    onProgressCommit={handleProgressCommit}
+                  />
+                ))}
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>

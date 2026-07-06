@@ -294,7 +294,7 @@ export default function GoalsSection() {
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <p className="label">Goals</p>
+        <p className="label">{goals.length} tracked</p>
         <button
           onClick={() => { setShowAdd((s) => !s); setEditing(null); }}
           className="flex items-center gap-1 px-3 py-1.5 rounded-full border border-accent/30

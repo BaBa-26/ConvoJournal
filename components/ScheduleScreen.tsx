@@ -9,6 +9,7 @@ import {
 import { useSession } from "next-auth/react";
 import type { Task, Reminder } from "@/types";
 import { loadDemoState, updateDemoState } from "@/lib/demoData";
+import Modal from "@/components/Modal";
 
 // ─── Priority colours ──────────────────────────────────────────────────────────
 
@@ -197,8 +198,7 @@ function AddItemModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center">
-      <div className="absolute inset-0 bg-ink-950/80 backdrop-blur-sm" onClick={onClose} />
+    <Modal open onClose={onClose} align="sheet">
       <div className="relative w-full max-w-[430px] bg-ink-900 border-t border-ink-700
                       rounded-t-2xl p-5 space-y-4 animate-slide-up">
         {/* Header */}
@@ -299,7 +299,7 @@ function AddItemModal({
           {saving ? "Saving…" : isEdit ? "Save changes" : `Add ${type}`}
         </button>
       </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -761,7 +761,7 @@ export default function ScheduleScreen() {
           </div>
           <button
             onClick={() => setModalDay(selectedDay)}
-            className="flex items-center gap-1.5 px-4 py-2 rounded-full
+            className="mr-12 md:mr-0 flex items-center gap-1.5 px-4 py-2 rounded-full
                        border border-gold/30 hover:border-gold/60
                        font-mono text-[11px] uppercase tracking-wider
                        text-gold/70 hover:text-gold transition-all focus:outline-none"

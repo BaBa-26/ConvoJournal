@@ -5,6 +5,7 @@ import { useSession, signIn, signOut } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { DEMO_PROFILE, resetDemoState } from "@/lib/demoData";
+import Modal from "@/components/Modal";
 import { usePreferences } from "@/components/PreferencesProvider";
 import { useUnsavedChangesGuard } from "@/hooks/useUnsavedChangesGuard";
 import { ACCENT_SWATCHES, BACKGROUND_PRESETS } from "@/types";
@@ -433,7 +434,7 @@ export default function SettingsScreen() {
             <Link href="/" className="btn-ghost justify-start">Today</Link>
             <Link href="/journal" className="btn-ghost justify-start">Journal</Link>
             <Link href="/schedule" className="btn-ghost justify-start">Calendar</Link>
-            <Link href="/tasks" className="btn-ghost justify-start">Goals</Link>
+            <Link href="/tasks" className="btn-ghost justify-start">To-Do&apos;s</Link>
           </div>
         </section>
       </div>
@@ -452,33 +453,30 @@ export default function SettingsScreen() {
       )}
 
       {/* Leave-with-unsaved-changes prompt */}
-      {pendingHref && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4">
-          <div className="absolute inset-0 bg-ink-950/70 backdrop-blur-sm" onClick={() => setPendingHref(null)} />
-          <div className="relative card w-full max-w-sm space-y-4 animate-slide-up">
-            <div className="space-y-1">
-              <p className="font-display italic text-lg text-parchment-100">Save your changes?</p>
-              <p className="font-mono text-xs text-parchment-600 leading-5">
-                You have unsaved personalization changes. Save them to apply across the app, or discard.
-              </p>
-            </div>
-            <div className="flex flex-col gap-2">
-              <button onClick={saveAndGo} className="btn-primary w-full">
-                Save &amp; leave
-              </button>
-              <button onClick={discardAndGo} className="btn-ghost w-full">
-                Discard &amp; leave
-              </button>
-              <button
-                onClick={() => setPendingHref(null)}
-                className="font-mono text-[11px] text-parchment-600 uppercase tracking-[0.15em] py-2 hover:text-parchment-400 transition-colors"
-              >
-                Stay on settings
-              </button>
-            </div>
+      <Modal open={pendingHref !== null} onClose={() => setPendingHref(null)}>
+        <div className="relative card w-full max-w-sm space-y-4 animate-slide-up">
+          <div className="space-y-1">
+            <p className="font-display italic text-lg text-parchment-100">Save your changes?</p>
+            <p className="font-mono text-xs text-parchment-600 leading-5">
+              You have unsaved personalization changes. Save them to apply across the app, or discard.
+            </p>
+          </div>
+          <div className="flex flex-col gap-2">
+            <button onClick={saveAndGo} className="btn-primary w-full">
+              Save &amp; leave
+            </button>
+            <button onClick={discardAndGo} className="btn-ghost w-full">
+              Discard &amp; leave
+            </button>
+            <button
+              onClick={() => setPendingHref(null)}
+              className="font-mono text-[11px] text-parchment-600 uppercase tracking-[0.15em] py-2 hover:text-parchment-400 transition-colors"
+            >
+              Stay on settings
+            </button>
           </div>
         </div>
-      )}
+      </Modal>
     </div>
   );
 }
