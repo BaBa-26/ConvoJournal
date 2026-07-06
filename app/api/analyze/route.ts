@@ -40,13 +40,13 @@ export async function POST(req: NextRequest) {
           where:   { userId: session.user.id, completed: false },
           select:  { title: true },
           orderBy: { createdAt: "desc" },
-          take:    50,
+          take:    25, // recent pending tasks are enough for dedup; caps prompt token cost
         }),
         prisma.goal.findMany({
           where:   { userId: session.user.id, completed: false },
           select:  { id: true, title: true, unit: true, target: true, current: true },
           orderBy: { createdAt: "desc" },
-          take:    30,
+          take:    20,
         }),
       ]);
       geminiContext = {

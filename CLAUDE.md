@@ -4,15 +4,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-**Progress** (repo: ConvoJournal) — mobile-first voice journaling PWA. Users speak a daily brain-dump; the app transcribes it, parses Yesterday/Today/Tomorrow sections, extracts tasks + reminders, and saves to Postgres. Auth-gated for saving; unauthenticated try-mode shows demo data from localStorage.
+**Progress** (repo: CProgress) — mobile-first voice journaling PWA. Users speak a daily brain-dump; the app transcribes it, parses Yesterday/Today/Tomorrow sections, extracts tasks + reminders + trackable goals, and saves to Postgres. Auth-gated for saving; unauthenticated try-mode shows demo data from localStorage. A schedule/calendar view (`/schedule`) and a Goals screen (`/tasks`, unit-based progress) sit alongside the journal.
 
 ## Commands
 
 ```bash
 npm run dev          # start dev server (localhost:3000)
 npm run build        # prisma generate + next build
-npm run db:push      # push schema changes to DB without a migration file
-npm run db:migrate   # create a named migration (use for schema changes)
+npm run db:push      # push schema changes to DB (USE THIS — see Gotchas)
+npm run db:migrate   # ⚠ currently fails P3019 (sqlite/postgres provider mismatch) — see Gotchas
 npm run db:studio    # Prisma Studio GUI
 ```
 
@@ -22,8 +22,10 @@ npm run db:studio    # Prisma Studio GUI
 - **Prisma 5 + Neon Postgres** (prod) — `DATABASE_URL` (pooled) + `DIRECT_URL` (migrations)
 - **NextAuth v4** — Google OAuth + dev credentials provider (dev-only)
 - **Groq** `whisper-large-v3-turbo` via `groq-sdk` for transcription — `GROQ_API_KEY` required
-- **Gemini 2.5 Flash** via `@google/generative-ai` for journal analysis — `GEMINI_API_KEY` required; falls back to `lib/parser.ts` regex on error
+- **Gemini 2.5 Flash** via `@google/genai` (v2.x, `GoogleGenAI` client) for journal analysis — `GEMINI_API_KEY` required; falls back to `lib/parser.ts` regex on error
 - Custom Trie + bigram N-gram autocomplete (`lib/autocomplete.ts`) persisted to localStorage
+- **`@vercel/speed-insights`** — `<SpeedInsights/>` mounted in `app/layout.tsx` (metrics only populate on Vercel once enabled in the dashboard)
+- Hosted on **Vercel** (prod alias `progress-coral-eight.vercel.app`); deploys build remotely on Linux
 
 ## Architecture
 
@@ -36,10 +38,20 @@ npm run db:studio    # Prisma Studio GUI
 - Session strategy is `"database"`. `user.id` is injected into the session via the `session` callback.
 
 ### Data flow — journal entry
-`JournalScreen` (5-phase state machine) → `POST /api/transcribe` (Groq Whisper, no auth) → `POST /api/analyze` (Gemini 2.5 Flash, no auth required but injects pending-task context if session exists) → `POST /api/journal` (auth required, upserts by `userId + date`). Tasks and reminders are created in the same `POST /api/journal` call.
+`JournalScreen` (5-phase state machine) → `POST /api/transcribe` (Groq Whisper, no auth) → `POST /api/analyze` (Gemini 2.5 Flash, no auth required but injects pending-task context + the user's active goals if a session exists) → `POST /api/journal` (auth required, upserts by `userId + date`). Tasks, reminders, **and goals** are created in the same `POST /api/journal` call, and goal-progress increments are applied there too.
+
+### Goals extraction & tracking
+`Goal` = a countable target over a period (`unit`/`target`/`current`/`period`). Two AI-driven behaviors in `lib/gemini.ts`:
+1. **Create** — "gym every day this week" → `{ unit: "days", target: 7, period: "week" }` in `analysis.goals`.
+2. **Auto-advance** — `/api/analyze` passes the auth'd user's active goals to Gemini; "went to the gym today" returns `analysis.goalUpdates` (`{ goalId, increment }`). **Hallucinated/forged goal IDs are filtered server-side** against the user's real active-goal IDs; `/api/journal` re-checks ownership (`findFirst({ id, userId })`) before incrementing. Auto-advance is **auth-only** (demo mode has no server-side goals to match).
+
+Goals CRUD lives at `/api/goals` + `/api/goals/[id]` (auth-gated, IDOR-checked). UI is `components/GoalsSection.tsx`, rendered atop the Goals screen (`components/TasksScreen.tsx`).
+
+### Schedule / calendar
+`components/ScheduleScreen.tsx` (`/schedule`) — month calendar with task/reminder dots, a day panel, and an "upcoming" feed. Tasks and reminders are **editable inline** via the bottom-sheet modal (title/date/time/priority/notes); the task↔reminder type is locked when editing (separate tables). Uses the `PATCH` routes, which accept `description` edits.
 
 ### Unauthenticated try-mode
-`lib/demoData.ts` seeds `localStorage` (key: `progress-demo-state-v1`) with fake entries/tasks/reminders. `JournalScreen`, `TasksScreen`, and `RemindersScreen` read from localStorage when no session exists. Saving prompts "Sign in to save".
+`lib/demoData.ts` seeds `localStorage` (key: `progress-demo-state-v1`) with fake entries/tasks/reminders/goals. `JournalScreen`, `TasksScreen`, `ScheduleScreen`, and `RemindersScreen` read from localStorage when no session exists. Saving prompts "Sign in to save". Journal analysis can *create* demo goals but cannot auto-advance them (see above).
 
 ### Rate limiting
 `middleware.ts` uses an in-memory sliding window: 5 req/min on `/api/transcribe`, 20/min on `/api/analyze`, 60/min default. Rate limiting runs before auth checks.
@@ -49,17 +61,22 @@ npm run db:studio    # Prisma Studio GUI
 | File | Role |
 |------|------|
 | `lib/auth.ts` | NextAuth config + `requireAuth()` guard |
-| `lib/validators.ts` | Zod schemas for all API inputs |
-| `lib/parser.ts` | Regex Yesterday/Today/Tomorrow + task/reminder extraction |
-| `lib/demoData.ts` | Demo state — `createDemoState`, `loadDemoState`, `appendDemoJournalEntry` |
+| `lib/validators.ts` | Zod schemas for all API inputs (incl. `GoalCreate/UpdateSchema`, goal fields in `JournalCreateSchema`) |
+| `lib/parser.ts` | Regex Yesterday/Today/Tomorrow + task/reminder extraction (fallback; does not emit goals) |
+| `lib/demoData.ts` | Demo state — `createDemoState`, `loadDemoState`, `appendDemoJournalEntry` (tasks/reminders/goals) |
 | `components/JournalScreen.tsx` | 5-phase state machine + entry history (640+ lines — avoid adding top-level state) |
 | `components/TodayScreen.tsx` | Home dashboard — greeting, agenda, quick links |
+| `components/TasksScreen.tsx` | Goals screen — renders `GoalsSection` then the task list |
+| `components/GoalsSection.tsx` | Self-contained goals UI — unit-aware progress bars, ± steppers, inline edit, demo + optimistic |
+| `components/ScheduleScreen.tsx` | Calendar + day panel + upcoming feed; inline-editable tasks/reminders |
 | `app/api/transcribe/route.ts` | Groq Whisper (public) — MIME allowlist, 25 MB cap |
-| `lib/gemini.ts` | Gemini 2.5 Flash client — `analyzeWithGemini()`, prompt injection defense, safety settings, fallback-safe |
-| `app/api/analyze/route.ts` | Gemini analysis with regex fallback; injects pending tasks + timezone as context for auth'd users |
+| `lib/gemini.ts` | Gemini client — `analyzeWithGemini()`; extracts tasks/reminders/goals/goalUpdates; prompt-injection defense, forged-goal-ID filtering, safety settings, fallback-safe |
+| `app/api/analyze/route.ts` | Gemini analysis with regex fallback; injects pending tasks + active goals + timezone for auth'd users |
+| `app/api/journal/route.ts` | Upserts entry; creates tasks/reminders/goals; applies ownership-checked goal increments |
+| `app/api/goals/route.ts`, `app/api/goals/[id]/route.ts` | Goals CRUD — auth-gated, IDOR-checked, keeps `completed` in sync + clamps `current ≤ target` |
 | `middleware.ts` | Rate limiting + CSP/HSTS/security headers |
-| `prisma/schema.prisma` | User, JournalEntry, Task, Reminder + NextAuth models |
-| `types/index.ts` | All shared TS types |
+| `prisma/schema.prisma` | User, JournalEntry, Task, Reminder, **Goal** + NextAuth models |
+| `types/index.ts` | All shared TS types (incl. `Goal`, `ExtractedGoal`, `GoalUpdate`, `GoalPeriod`) |
 
 ## Environment Variables
 
@@ -87,6 +104,7 @@ GEMINI_API_KEY=         # from Google AI Studio (aistudio.google.com) — AI Stu
 - `User.onboarded: Boolean` — gates redirect to `/onboarding` on first sign-in
 - One `JournalEntry` per calendar day — upserted on `{ userId, date }` unique constraint
 - `Task.source`: `"journal"` | `"manual"`. `Reminder.reminded` reserved for future push notifications
+- `Goal`: `unit` (free-form counting noun, default `"times"`), `target` (int ≥1), `current` (int, 0…target), `period` (`"week"` | `"month"` | `"ongoing"`), `completed` (mirrors `current ≥ target`), `source` (`"journal"` | `"manual"`). No relation to `JournalEntry` — goals persist independent of the entry that created them.
 - All app models have `userId` FK with `onDelete: Cascade`
 
 ## Gotchas
@@ -97,6 +115,10 @@ GEMINI_API_KEY=         # from Google AI Studio (aistudio.google.com) — AI Stu
 - `phase === "analyzing"` (not `"recording"`) is the correct check in the post-transcription effect — phase is already `"analyzing"` by the time `recState` reaches `"idle"`
 - `NEXTAUTH_SECRET` must be set or NextAuth throws on any session operation
 - Demo state localStorage key is `"progress-demo-state-v1"` (legacy name)
+- **Migrations are broken for `migrate dev`:** `prisma/migrations/migration_lock.toml` says `provider = "sqlite"` (early prototype) but the live DB is Neon Postgres, so `db:migrate` fails **P3019**. Apply schema changes with `npm run db:push`. Preview the SQL first with: `npx prisma migrate diff --from-schema-datasource prisma/schema.prisma --to-schema-datamodel prisma/schema.prisma --script`. There is only one `DATABASE_URL`, so `db:push` writes directly to prod.
+- **Goal auto-advance is auth-only.** `/api/analyze` matches "I did X" against goals it reads from the DB; demo-mode goals live in localStorage and are invisible server-side, so journal entries can create demo goals but never increment them.
+- **Windows `next build` fails on `/icon`** (`@vercel/og` `fileURLToPath` Invalid URL) — a local-only quirk; the route builds fine on Vercel's Linux. Use `npx tsc --noEmit` to typecheck locally, and let Vercel build on deploy.
+- Editing a schedule item **cannot switch task↔reminder** (different tables) — the type toggle is locked in edit mode.
 ## 🛑 CRITICAL GUARDRAILS & SECURITY BEHAVIOR
 
 ### 1. Security & Data Protection
