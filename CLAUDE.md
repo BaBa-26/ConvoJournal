@@ -47,6 +47,12 @@ npm run db:studio    # Prisma Studio GUI
 
 Goals CRUD lives at `/api/goals` + `/api/goals/[id]` (auth-gated, IDOR-checked). UI is `components/GoalsSection.tsx`, rendered atop the Goals screen (`components/TasksScreen.tsx`).
 
+### AI extraction guardrails & cost
+`lib/gemini.ts` — everything below treats the transcript as untrusted:
+- **Prompt-injection defense** — the system prompt fences the entry as data; `INJECTION_RE` matches override *phrasing* (not lone words like "ignore", which appear in legit journaling). It (a) drops poisoned task/goal titles via `sanitizeTitle` and (b) re-asserts the data boundary in the prompt when the transcript itself reads like an override. `sanitizeField` scrubs the four narrative fields; `sanitizeTitle` also strips leaked fence tokens (`[Journal Entry]` etc.).
+- **Forged-goal-ID filtering** — `goalUpdates` are kept only when `goalId` ∈ the user's active-goal set; `/api/journal` re-checks ownership before writing.
+- **Cost/latency** — the `generateContent` config sets `thinkingConfig: { thinkingBudget: 0 }` (thinking is billed at the output rate and adds ~5s on schema-constrained extraction), `maxOutputTokens: 2048`, and `temperature: 0` (deterministic). `/api/analyze` injects at most 25 pending task titles + 20 active goals. Warm `/api/analyze` ≈ 1s. Pricing (Jul 2026): 2.5 Flash $0.30/$2.50 per 1M in/out; Flash-Lite is ~3–6× cheaper if a future A/B shows it holds extraction quality.
+
 ### Schedule / calendar
 `components/ScheduleScreen.tsx` (`/schedule`) — month calendar with task/reminder dots, a day panel, and an "upcoming" feed. Tasks and reminders are **editable inline** via the bottom-sheet modal (title/date/time/priority/notes); the task↔reminder type is locked when editing (separate tables). Uses the `PATCH` routes, which accept `description` edits.
 

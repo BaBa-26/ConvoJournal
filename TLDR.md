@@ -1,10 +1,31 @@
 # Progress (ConvoJournal) — Handoff Doc
 
-Last updated: 2026-06-30. **Read "🎨 Dashboard Redesign" below first — it's the active in-progress work.** The older "⚠️ Last Session" (reminders security fix) is still valid history below it.
+Last updated: 2026-07-04. **Read "🟢 Latest" directly below for current state.** Everything under "🎨 Dashboard Redesign" and "⚠️ Last Session" further down is now **shipped history** — kept for context, not active work.
 
 ---
 
-## 🎨 Dashboard Redesign + Goals Progress — IN PROGRESS (this session)
+## 🟢 Latest (2026-07-04) — shipped & deployed
+
+All of the following is committed on `claude/nifty-hamilton-ISukC`, deployed to prod (`progress-coral-eight.vercel.app`), and verified live:
+
+- **Smart Goals** — new `Goal` model (`unit`/`target`/`current`/`period`), auth-gated + IDOR-checked CRUD at `/api/goals` + `/api/goals/[id]`. Gemini now **creates** goals from journal entries ("gym every day this week" → days/7) and **auto-advances** existing goals from reported progress ("went to the gym today" → +1), with hallucinated goal IDs filtered server-side and ownership re-checked in `/api/journal`. UI: `components/GoalsSection.tsx` (unit-aware bars, ± steppers, inline edit) atop the Goals screen (`TasksScreen.tsx`). Demo mode can create goals but not auto-advance them (no server-side goals to match).
+- **Editable calendar** — tasks & reminders on `/schedule` are now inline-editable (title/date/time/priority/notes) via the bottom-sheet modal; type is locked in edit mode. PATCH routes accept `description`.
+- **AI guardrails hardened** — phrase-based injection detector (`INJECTION_RE`), task/goal title sanitization, prompt-boundary re-assertion. Verified live: an "ignore all previous instructions / reveal your system prompt" payload is neutralized.
+- **Gemini cost cut** — `thinkingBudget: 0`, `maxOutputTokens: 2048`, `temperature: 0`, trimmed injected context (25 tasks / 20 goals). Warm `/api/analyze` ~6s → ~1s.
+- **Vercel Speed Insights** — `<SpeedInsights/>` in `app/layout.tsx`.
+
+### ⚠️ Migration workflow changed — use `db:push`, NOT `db:migrate`
+`prisma/migrations/migration_lock.toml` says `provider = "sqlite"` (early prototype) but the live DB is Neon Postgres, so `prisma migrate dev` fails **P3019**. Apply schema changes with `npm run db:push` (writes directly to the single prod Neon DB — needs explicit user OK). Preview first: `npx prisma migrate diff --from-schema-datasource prisma/schema.prisma --to-schema-datamodel prisma/schema.prisma --script`. The `Goal` table was applied this way and the DB is in sync.
+
+### ⏳ Pending — signed-out "one free try" funnel (awaiting mockup)
+Decided: signed-out users get **one** journal entry to try, see the extraction, then hit a **sign-in wall (no local save)**; a 2nd entry is gated. **Not built** — Aarrav is designing the flow in Claude and will bring a mockup. Note: `JournalScreen.tsx` currently hardcodes `requiresAuth={false}`, so signed-out users still save to local demo storage — the fix flips it to `requiresAuth={!session}` and gates the 2nd try via a localStorage flag consumed on successful analysis.
+
+### 🔎 Cost follow-up (not started)
+Evaluate **Gemini 2.5 Flash-Lite** (or a 3.x tier) vs Flash via an A/B over ~20 real entries before switching — Lite is ~3–6× cheaper but must hold extraction quality. Also flagged: `/api/analyze` is public/unauthenticated, a token-burn abuse vector at scale — consider a budget guard or lightweight gate.
+
+---
+
+## 🎨 Dashboard Redesign + Goals Progress — SHIPPED (historical)
 
 Implementing the `Progress Dashboard.dc.html` claude.ai/design mockup: a redesigned Today screen with **3 selectable layouts**, **full personalization** (accent color, name, type size, reminder time, light/dark), and **Goals progress tracking** (per-task 0–100% with a draggable progress bar).
 
@@ -43,14 +64,9 @@ Production: `https://progress-coral-eight.vercel.app` · Vercel project `baba-26
 
 ---
 
-## ⚠️ Last Session — read this first
+## ⚠️ Older session history (all resolved — kept for context)
 
-1. **Security fix not yet deployed.** `app/api/reminders/[id]/route.ts` had a critical bug — PATCH/DELETE had zero auth or ownership check (anyone who got a reminder's ID could modify/delete it, even unauthenticated). It's fixed locally (matches the secure pattern in `tasks/[id]/route.ts` now) but **not committed or pushed yet**. This is a live bug in production right now — prioritize shipping it. Uncommitted files:
-   ```
-   M .gitignore   M CLAUDE.md   M app/api/reminders/[id]/route.ts
-   M lib/gemini.ts   M lib/validators.ts   M package.json / package-lock.json
-   ?? scripts/   (new: scripts/test-gemini.ts)
-   ```
+1. **Reminders IDOR — FIXED & DEPLOYED.** `app/api/reminders/[id]/route.ts` PATCH/DELETE once had no auth/ownership check; it now uses `ownedReminder()` (mirrors `tasks/[id]`) and is live in prod. No longer an open issue.
 2. **Vercel deploys were broken for a while** — root causes (both fixed, verified working):
    - `.vercel/output` was committed to git, so Vercel reused stale prebuilt output on every git-push deploy instead of building fresh. Untracked it, added `.vercel/` to `.gitignore`.
    - `styled-jsx` version mismatch (we had `^5.1.7`, Next.js 14.2.35 wants exactly `5.1.1`) caused npm to keep two copies, breaking the build's file tracer. Pinned to exact `5.1.1` so npm dedupes to one root copy.
@@ -82,8 +98,9 @@ Production: `https://progress-coral-eight.vercel.app` · Vercel project `baba-26
 | Voice | **Groq Whisper** (`whisper-large-v3-turbo`) via `groq-sdk` — server-side only |
 | Analysis | **Gemini 2.5 Flash** via `@google/genai` (`lib/gemini.ts`) — falls back to local regex parser (`lib/parser.ts`) on error |
 | Autocomplete | Custom Trie + bigram N-gram (`lib/autocomplete.ts`) |
-| Demo mode | `lib/demoData.ts` — localStorage-backed fake data for unauthenticated users |
+| Demo mode | `lib/demoData.ts` — localStorage-backed fake data (entries/tasks/reminders/goals) for unauthenticated users |
 | Date utils | date-fns, chrono-node |
+| Analytics | `@vercel/speed-insights` — `<SpeedInsights/>` in `app/layout.tsx` (populates once enabled in the Vercel dashboard) |
 
 `lib/openai.ts` (dead code from the old OpenAI Whisper era) has been deleted — no longer present.
 
@@ -162,8 +179,9 @@ prisma/
 | Rate limiting | In-memory sliding window: 5/min transcribe, 5/min analyze (both AI/billable), 60/min default, + 200/hr global AI cap across all IPs |
 | HTTP headers | CSP, X-Frame-Options, HSTS, nosniff, Referrer-Policy, Permissions-Policy |
 | Secrets | `.env`, `.vercel/`, `*.db` gitignored; never committed (verified via full git history search); no `NEXT_PUBLIC_` leakage |
-| Prompt injection | `[STRICT SECURITY RULE]` delimiter in Gemini system prompt + `sanitizeField()` strips suspicious output |
-| Try-mode | `/api/transcribe` + `/api/analyze` public; saving requires auth |
+| Prompt injection | `[STRICT SECURITY RULE]` fence + phrase-based `INJECTION_RE`; `sanitizeField` (narrative) + `sanitizeTitle` (task/goal titles, strips fence tokens); prompt boundary re-asserted when transcript looks like an override |
+| Goals IDOR | `goalUpdates` accepted only for the user's own active-goal IDs (hallucinated IDs dropped); `/api/journal` re-checks ownership before incrementing |
+| Try-mode | `/api/transcribe` + `/api/analyze` public; saving requires auth. NOTE: `/api/analyze` is a public token-burn vector at scale — budget guard TBD |
 
 Full security audit run 2026-06-30 — only finding was the reminders IDOR (now fixed locally). No hardcoded secrets, no raw SQL, no `dangerouslySetInnerHTML`, errors don't leak internals to clients.
 
@@ -177,11 +195,15 @@ Full security audit run 2026-06-30 — only finding was the reminders IDOR (now 
 - Relations: `tasks[]`, `reminders[]`
 
 **Task**
-- `title`, `description`, `dueDate`, `priority` (high/medium/low), `completed`
+- `title`, `description`, `dueDate`, `priority` (high/medium/low), `completed`, `progress` (0–100)
 - `source`: `"journal"` (auto-extracted) | `"manual"` (user-added)
 
 **Reminder**
 - `title`, `description`, `eventDate`, `reminded` (reserved for future push)
+
+**Goal**
+- `title`, `unit` (free-form counting noun, default `"times"`), `target` (int ≥1), `current` (0…target), `period` (`week`/`month`/`ongoing`), `completed` (mirrors `current ≥ target`), `source` (`journal`/`manual`)
+- No relation to `JournalEntry` — goals persist independent of the entry that created them.
 
 All models: `userId` FK with `onDelete: Cascade`.
 
@@ -198,8 +220,11 @@ All models: `userId` FK with `onDelete: Cascade`.
 | `/api/tasks` | GET/POST | Yes | List / create tasks |
 | `/api/tasks/[id]` | PATCH/DELETE | Yes | Update / remove task (ownership-checked) |
 | `/api/reminders` | GET/POST | Yes | List / create reminders |
-| `/api/reminders/[id]` | PATCH/DELETE | Yes | Update / remove reminder (ownership-checked — fix pending deploy) |
+| `/api/reminders/[id]` | PATCH/DELETE | Yes | Update / remove reminder (ownership-checked) |
+| `/api/goals` | GET/POST | Yes | List / create goals |
+| `/api/goals/[id]` | PATCH/DELETE | Yes | Update / remove goal (ownership-checked, clamps `current ≤ target`) |
 | `/api/user/onboard` | POST | Yes | Mark onboarding complete |
+| `/api/user/preferences` | GET/PATCH | Yes | Dashboard personalization (accent/layout/etc.) |
 
 ---
 
@@ -213,7 +238,13 @@ Home dashboard. Greeting based on time of day, today's agenda (tasks due today/o
 
 Unauthenticated users see demo entries seeded from `lib/demoData.ts`.
 
-### Tasks (`/tasks`), Schedule (`/schedule`), Reminders (`/reminders`, not in nav), Settings (`/settings`), Onboarding (`/onboarding`)
+### Goals / Tasks (`/tasks`)
+`GoalsSection` (unit-aware goal cards with ± steppers + inline edit) on top, then the task list with per-task progress bars. Branded "Goals" in nav.
+
+### Schedule (`/schedule`)
+Month calendar + day panel + upcoming feed. Tasks & reminders are **inline-editable** (pencil → bottom-sheet modal); type locked in edit mode.
+
+### Reminders (`/reminders`, not in nav), Settings (`/settings`), Onboarding (`/onboarding`)
 Standard CRUD/auth-gated screens — see component files above.
 
 ---
