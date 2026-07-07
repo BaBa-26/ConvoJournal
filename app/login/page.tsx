@@ -3,6 +3,7 @@
 import { signIn, useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
+import BrandMark from "@/components/BrandMark";
 
 export default function LoginPage() {
   const { data: session, status } = useSession();
@@ -52,6 +53,9 @@ export default function LoginPage() {
       <div className="w-full max-w-sm space-y-8">
         {/* Wordmark */}
         <div className="text-center space-y-2">
+          <div className="flex justify-center mb-4">
+            <BrandMark size={52} stroke={7} dotR={7} />
+          </div>
           <h1 className="font-display text-4xl text-parchment-200">Progress</h1>
           <p className="font-mono text-xs text-parchment-700 tracking-[0.2em] uppercase">
             your progress, mapped how you want it

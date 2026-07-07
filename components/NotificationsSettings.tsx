@@ -93,20 +93,32 @@ export default function NotificationsSettings() {
             Get a push when a reminder is due, plus a daily nudge for goals you haven&apos;t hit
             (at your reminder time). This device only.
           </p>
-          <div className="flex flex-wrap gap-2">
+          {/* Slider toggle — clicking it triggers the browser permission prompt */}
+          <div className="flex items-center justify-between gap-3">
+            <span className="font-mono text-xs text-parchment-400">
+              {busy ? "…" : enabled ? "On · this device" : "Off"}
+            </span>
             <button
+              role="switch"
+              aria-checked={enabled}
+              aria-label="Enable notifications"
               onClick={toggle}
               disabled={busy}
-              className={enabled ? "btn-ghost" : "btn-primary"}
+              className={`relative w-12 h-7 rounded-full flex-shrink-0 transition-colors
+                          focus:outline-none disabled:opacity-50
+                          ${enabled ? "bg-accent" : "bg-ink-700 border border-ink-600"}`}
             >
-              {busy ? "…" : enabled ? "Turn off" : "Enable notifications"}
+              <span
+                className={`absolute top-1 w-5 h-5 rounded-full transition-all duration-200
+                            ${enabled ? "left-6 bg-ink-950" : "left-1 bg-parchment-400"}`}
+              />
             </button>
-            {enabled && (
-              <button onClick={sendTest} disabled={busy} className="btn-ghost">
-                Send test
-              </button>
-            )}
           </div>
+          {enabled && (
+            <button onClick={sendTest} disabled={busy} className="btn-ghost">
+              Send test
+            </button>
+          )}
           {msg && <p className="font-mono text-[11px] text-parchment-500 leading-5">{msg}</p>}
         </>
       )}

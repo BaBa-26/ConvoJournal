@@ -79,7 +79,7 @@ export function StreakHeatmap({
   days,
   streakCount,
   label = "Writing streak",
-  caption = "Five weeks of showing up. Don't break the chain.",
+  caption,
   footer,
 }: {
   days: StreakDay[];
@@ -88,11 +88,24 @@ export function StreakHeatmap({
   caption?: string;
   footer?: React.ReactNode;
 }) {
+  // Caption reflects the real streak (not a hard-coded line) unless a footer/caption is passed in.
+  const entryDays = days.filter((d) => d.hasEntry).length;
+  const autoCaption =
+    streakCount <= 0
+      ? entryDays > 0
+        ? "Streak broken — write today to start a new one."
+        : "No entries yet. Speak once to begin your streak."
+      : streakCount === 1
+        ? "1 day in. Don't break the chain."
+        : `${streakCount} days running. Don't break the chain.`;
+
   return (
     <div className="bg-card border border-border rounded-2xl p-4">
       <div className="flex justify-between items-center">
         <span className={LABEL}>{label}</span>
-        <span className="font-display italic font-semibold text-lg text-accent">{streakCount} days</span>
+        <span className="font-display italic font-semibold text-lg text-accent">
+          {streakCount} {streakCount === 1 ? "day" : "days"}
+        </span>
       </div>
       <div className="grid grid-cols-7 gap-1 my-3.5">
         {days.map((d) => (
@@ -104,7 +117,7 @@ export function StreakHeatmap({
           />
         ))}
       </div>
-      {footer ?? <p className="font-mono text-[11px] text-muted-foreground m-0">{caption}</p>}
+      {footer ?? <p className="font-mono text-[11px] text-muted-foreground m-0">{caption ?? autoCaption}</p>}
     </div>
   );
 }

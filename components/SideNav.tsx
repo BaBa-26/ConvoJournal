@@ -5,6 +5,10 @@ import { usePathname } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { usePreferences } from "@/components/PreferencesProvider";
 import { DEMO_PROFILE } from "@/lib/demoData";
+import BrandMark from "@/components/BrandMark";
+
+// Routes with their own full-bleed chrome — the app sidebar stands down there.
+const HIDDEN_PREFIXES = ["/login", "/landing", "/onboarding"];
 
 function initialOf(name: string): string {
   const trimmed = name.trim();
@@ -41,15 +45,18 @@ export default function SideNav() {
   const image = session?.user?.image ?? null;
   const subLabel = session?.user?.email ?? "Sign in to save";
 
+  if (HIDDEN_PREFIXES.some((p) => pathname.startsWith(p))) return null;
+
   return (
     <nav className="hidden md:flex flex-col w-48 shrink-0 h-screen sticky top-0 border-r border-ink-700 bg-ink-950">
       {/* Wordmark — links to landing page */}
       <div className="px-5 pt-8 pb-5">
         <Link
           href="/landing"
-          className="font-display italic text-xl text-parchment-200 tracking-tight hover:text-gold transition-colors duration-150"
+          className="flex items-center gap-2.5 text-parchment-200 hover:text-gold transition-colors duration-150"
         >
-          Progress
+          <BrandMark size={22} stroke={8} dotR={3.4} />
+          <span className="font-display italic text-xl tracking-tight">Progress</span>
         </Link>
       </div>
 

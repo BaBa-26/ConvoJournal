@@ -33,10 +33,13 @@ export async function currentSubscription(): Promise<PushSubscription | null> {
 // Ask permission, create a push subscription, and register it with the server.
 export async function enablePush(): Promise<{ ok: boolean; reason?: string }> {
   if (!pushSupported()) return { ok: false, reason: "unsupported" };
-  if (!VAPID_PUBLIC) return { ok: false, reason: "no-key" };
 
+  // Ask first, so clicking the toggle always surfaces the browser prompt (when the
+  // permission is still "default"). Called synchronously off the click gesture.
   const permission = await Notification.requestPermission();
   if (permission !== "granted") return { ok: false, reason: "denied" };
+
+  if (!VAPID_PUBLIC) return { ok: false, reason: "no-key" };
 
   const reg = await navigator.serviceWorker.ready;
   const sub = await reg.pushManager.subscribe({
