@@ -6,8 +6,8 @@ import { useSession } from "next-auth/react";
 import { usePreferences } from "@/components/PreferencesProvider";
 import { DEMO_PROFILE } from "@/lib/demoData";
 
-// Routes with no app chrome, plus /settings itself (this button *is* the way there).
-const HIDDEN_PREFIXES = ["/login", "/landing", "/onboarding", "/settings"];
+// Routes with no app chrome, plus /profile itself (this button *is* the way there).
+const HIDDEN_PREFIXES = ["/login", "/landing", "/onboarding", "/profile"];
 
 function initialOf(name: string): string {
   const trimmed = name.trim();
@@ -30,8 +30,8 @@ export default function ProfileButton() {
     <div className="md:hidden fixed inset-x-0 top-0 z-50 pt-safe pointer-events-none">
       <div className="mx-auto w-full max-w-[430px] flex justify-end px-4 pt-3">
         <Link
-          href="/settings"
-          aria-label="Profile and settings"
+          href="/profile"
+          aria-label="Your profile and account"
           className="pointer-events-auto flex items-center justify-center w-10 h-10 rounded-full
                      bg-ink-900/60 backdrop-blur-xl border border-parchment-100/10
                      shadow-[0_8px_24px_-8px_rgba(0,0,0,0.6)]

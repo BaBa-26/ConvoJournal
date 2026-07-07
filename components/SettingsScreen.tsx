@@ -1,10 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useSession, signIn, signOut } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { DEMO_PROFILE, resetDemoState } from "@/lib/demoData";
+import { resetDemoState } from "@/lib/demoData";
 import Modal from "@/components/Modal";
 import { usePreferences } from "@/components/PreferencesProvider";
 import { useUnsavedChangesGuard } from "@/hooks/useUnsavedChangesGuard";
@@ -19,6 +18,8 @@ import {
   AgendaList,
   StreakHeatmap,
   WeeklyStats,
+  TaskTracker,
+  GoalsTracker,
   TonightCTA,
   TomorrowPreview,
   RecentReflections,
@@ -103,6 +104,8 @@ function LayoutStudio() {
     tonight: <TonightCTA reminderLabel={null} />,
     agenda: <AgendaList items={data.agendaItems} />,
     stats: <WeeklyStats stats={data.weekStats} />,
+    taskprogress: <TaskTracker tasks={data.tasks} />,
+    goals: <GoalsTracker />,
     streak: <StreakHeatmap days={data.streakDays} streakCount={data.streakCount} />,
     tomorrow: <TomorrowPreview tasks={data.tasks} reminders={data.reminders} />,
     recent: <RecentReflections entries={data.recentEntries} />,
@@ -156,11 +159,9 @@ function LayoutStudio() {
 }
 
 export default function SettingsScreen() {
-  const { data: session } = useSession();
   const router = useRouter();
   const { prefs, stagePrefs, commitPrefs, revertPrefs, hasUnsaved } = usePreferences();
   const [resetting, setResetting] = useState(false);
-  const [nameDraft, setNameDraft] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [pendingHref, setPendingHref] = useState<string | null>(null);
@@ -214,36 +215,31 @@ export default function SettingsScreen() {
     }
   };
 
-  const nameValue = nameDraft ?? prefs.displayName ?? session?.user?.name ?? "";
   const currentBg = prefs.backgroundImage;
 
   return (
     <div className="flex flex-col flex-1 overflow-hidden animate-fade-in">
       <header className="px-5 pt-safe pt-5 pb-4 flex-shrink-0">
-        <p className="font-mono text-[10px] text-parchment-700 uppercase tracking-[0.2em]">profile / settings</p>
+        <p className="font-mono text-[10px] text-parchment-700 uppercase tracking-[0.2em]">settings</p>
         <h1 className="font-display italic text-2xl text-parchment-100 leading-tight mt-1">keep the app tuned</h1>
       </header>
 
       <div className="flex-1 overflow-y-auto px-5 pb-nav space-y-4">
-        {/* ── Personalize ─────────────────────────────────────── */}
-        <section className="card space-y-4">
-          <p className="label">Personalize</p>
-
-          {/* Name */}
-          <div className="space-y-1.5">
-            <label className="font-mono text-xs text-parchment-600">Name</label>
-            <input
-              className="input"
-              value={nameValue}
-              placeholder="Your name"
-              onChange={(e) => setNameDraft(e.target.value)}
-              onBlur={() => {
-                const v = (nameDraft ?? "").trim();
-                if (nameDraft !== null && v) stagePrefs({ displayName: v });
-                setNameDraft(null);
-              }}
-            />
+        {/* Bridge to the profile/account page */}
+        <Link
+          href="/profile"
+          className="card flex items-center justify-between hover:border-ink-600 transition-colors"
+        >
+          <div>
+            <p className="font-mono text-sm text-parchment-200">Profile &amp; account</p>
+            <p className="font-mono text-[11px] text-parchment-700 mt-0.5">Your name, sign-in &amp; account</p>
           </div>
+          <span className="text-parchment-700 text-lg">→</span>
+        </Link>
+
+        {/* ── Appearance ──────────────────────────────────────── */}
+        <section className="card space-y-4">
+          <p className="label">Appearance</p>
 
           {/* Accent */}
           <div className="space-y-1.5">
@@ -390,31 +386,6 @@ export default function SettingsScreen() {
                 ? "Cards turn to frosted glass so the background shows through."
                 : "Cards stay solid; the background shows around them."}
             </p>
-          </div>
-        </section>
-
-        {/* ── Account ─────────────────────────────────────────── */}
-        <section className="card space-y-3">
-          <p className="label">Account</p>
-          <div className="space-y-1">
-            <p className="font-display italic text-lg text-parchment-200">
-              {prefs.displayName ?? session?.user?.name ?? DEMO_PROFILE.name}
-            </p>
-            <p className="font-mono text-xs text-parchment-700">{session?.user?.email ?? DEMO_PROFILE.email}</p>
-          </div>
-          <div className="flex flex-wrap gap-2 pt-1">
-            {session ? (
-              <button onClick={() => signOut({ callbackUrl: "/login" })} className="btn-ghost">
-                Sign out
-              </button>
-            ) : (
-              <button onClick={() => signIn()} className="btn-primary">
-                Sign in
-              </button>
-            )}
-            <Link href="/login" className="btn-ghost">
-              Onboarding
-            </Link>
           </div>
         </section>
 

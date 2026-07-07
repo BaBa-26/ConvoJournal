@@ -5,6 +5,7 @@ import BottomNav from "@/components/BottomNav";
 import ProfileButton from "@/components/ProfileButton";
 import AuthProvider from "@/components/AuthProvider";
 import PreferencesProvider from "@/components/PreferencesProvider";
+import ServiceWorkerRegister from "@/components/ServiceWorkerRegister";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 import "./globals.css";
 
@@ -59,6 +60,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <BottomNav />
           </PreferencesProvider>
         </AuthProvider>
+        <ServiceWorkerRegister />
         <SpeedInsights />
       </body>
     </html>

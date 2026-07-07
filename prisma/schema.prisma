@@ -60,7 +60,9 @@ model User {
   // ─── Dashboard personalization ───────────────────────────────────────────
   accentColor    String?        // hex preset, e.g. "#c8a878"; null = default gold
   typeScale      String   @default("md")       // "sm" | "md" | "lg"
-  reminderTime   String?        // "HH:mm" 24h — nightly reflection nudge (persisted only)
+  reminderTime   String?        // "HH:mm" 24h — daily goal/reflection nudge time (local)
+  timezone       String?        // IANA tz (e.g. "Europe/London") captured when push is enabled; used to fire the daily nudge at the user's local reminderTime
+  lastGoalNudge  DateTime?      // when the daily goal nudge last fired — prevents duplicate nudges within a day
   themeLayout    String   @default("daybreak")  // "daybreak" | "hearth" | "mosaic"
   colorMode      String   @default("dark")      // "light" | "dark" — only meaningful for daybreak
   widgetOrder    String[] @default(["tonight", "agenda", "stats", "streak", "tomorrow", "recent"])
@@ -73,6 +75,22 @@ model User {
   tasks          Task[]
   reminders      Reminder[]
   goals          Goal[]
+  pushSubscriptions PushSubscription[]
+}
+
+// One row per browser/device a user has enabled notifications on. `endpoint` is the unique
+// push address the browser hands us; `p256dh`/`auth` are the keys web-push needs to encrypt
+// the payload so only that device can read it.
+model PushSubscription {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
 
 // ─── App models ───────────────────────────────────────────────────────────────

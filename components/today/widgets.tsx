@@ -1,8 +1,12 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useState, useCallback } from "react";
+import { useSession } from "next-auth/react";
 import { format, parseISO, isToday, startOfDay, differenceInCalendarDays } from "date-fns";
-import type { AgendaItem, WeekStats, StreakDay, JournalEntry, Task, Reminder } from "@/types";
+import type { AgendaItem, WeekStats, StreakDay, JournalEntry, Task, Reminder, Goal, GoalPeriod } from "@/types";
+import { computeTaskStats } from "@/lib/taskStats";
+import { loadDemoState } from "@/lib/demoData";
 
 const PRIORITY_COLORS: Record<string, string> = {
   high: "#c87a6a",
@@ -138,6 +142,133 @@ export function WeeklyStats({
       <p className={`${LABEL} mb-2.5 ml-0.5`}>{label}</p>
       {row}
     </div>
+  );
+}
+
+// ─── Task tracker ───────────────────────────────────────────────────────────────
+
+// Task completion progress, derived from the tasks already loaded for Today. Mirrors the
+// overview card on the Tasks screen so the number matches. Taps through to the full list.
+export function TaskTracker({
+  tasks,
+  label = "Task progress",
+}: {
+  tasks: Task[];
+  label?: string;
+}) {
+  const stats = computeTaskStats(tasks);
+
+  return (
+    <Link href="/tasks" className="block bg-card border border-border rounded-2xl p-4 space-y-2.5">
+      <div className="flex items-center justify-between">
+        <span className={LABEL}>{label}</span>
+        {stats.total > 0
+          ? <span className="font-display italic font-semibold text-lg text-accent leading-none">{stats.completionPct}%</span>
+          : <span className="font-mono text-[10px] text-muted-foreground">none yet</span>}
+      </div>
+
+      {stats.total > 0 ? (
+        <>
+          <div className="h-2 rounded-full bg-muted overflow-hidden">
+            <div
+              className="h-full rounded-full bg-accent transition-all duration-300"
+              style={{ width: `${stats.completionPct}%` }}
+            />
+          </div>
+          <div className="flex items-center justify-between pt-0.5">
+            <span className="font-mono text-[10px] text-muted-foreground">
+              {stats.done} of {stats.total} done
+            </span>
+            <div className="flex items-center gap-3">
+              {(["high", "medium", "low"] as const).map((p) => (
+                <span key={p} className="flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full" style={{ background: PRIORITY_COLORS[p] }} />
+                  <span className="font-mono text-[9px] text-muted-foreground">{stats.byPriority[p]}</span>
+                </span>
+              ))}
+            </div>
+          </div>
+        </>
+      ) : (
+        <p className="font-display italic text-sm text-muted-foreground">
+          No tasks yet — they appear here as you add them.
+        </p>
+      )}
+    </Link>
+  );
+}
+
+// ─── Goals tracker ──────────────────────────────────────────────────────────────
+
+const GOAL_PERIOD_LABEL: Record<GoalPeriod, string> = {
+  week: "this week", month: "this month", ongoing: "ongoing",
+};
+
+// Compact, read-only view of tracked goals with progress bars. Fetches its own goals
+// (session-aware, with a demo fallback) since Today's data hook doesn't carry them.
+// Taps through to the Goals screen for stepping/editing.
+export function GoalsTracker({ label = "Goals" }: { label?: string }) {
+  const { data: session, status } = useSession();
+  const [goals, setGoals] = useState<Goal[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const load = useCallback(async () => {
+    if (status === "loading") return;
+    if (!session) {
+      setGoals(loadDemoState().goals);
+      setLoading(false);
+      return;
+    }
+    try {
+      const res = await fetch("/api/goals");
+      if (res.ok) setGoals(await res.json());
+    } catch { /* leave empty on failure */ }
+    setLoading(false);
+  }, [session, status]);
+
+  useEffect(() => { load(); }, [load]);
+
+  if (loading) return null;
+
+  return (
+    <Link href="/tasks" className="block bg-card border border-border rounded-2xl p-4 space-y-3">
+      <div className="flex items-center justify-between">
+        <span className={LABEL}>{label}</span>
+        <span className="font-mono text-[10px] text-muted-foreground">{goals.length} tracked</span>
+      </div>
+
+      {goals.length === 0 ? (
+        <p className="font-display italic text-sm text-muted-foreground">
+          No goals yet — set one on the Goals screen.
+        </p>
+      ) : (
+        <div className="flex flex-col gap-3">
+          {goals.slice(0, 4).map((g) => {
+            const pct = g.target > 0 ? Math.min(100, Math.round((g.current / g.target) * 100)) : 0;
+            const done = g.completed || g.current >= g.target;
+            return (
+              <div key={g.id} className="space-y-1.5">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-mono text-xs text-foreground truncate">{g.title}</span>
+                  <span className="font-mono text-[10px] text-muted-foreground flex-shrink-0">
+                    <span className="text-accent">{g.current}</span>/{g.target} {g.unit}
+                  </span>
+                </div>
+                <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+                  <div
+                    className="h-full rounded-full transition-all duration-300"
+                    style={{ width: `${pct}%`, background: done ? PRIORITY_COLORS.low : "rgb(var(--accent))" }}
+                  />
+                </div>
+              </div>
+            );
+          })}
+          {goals.length > 4 && (
+            <span className="font-mono text-[10px] text-muted-foreground">+{goals.length - 4} more →</span>
+          )}
+        </div>
+      )}
+    </Link>
   );
 }
 

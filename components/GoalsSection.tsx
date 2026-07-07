@@ -291,8 +291,47 @@ export default function GoalsSection() {
 
   if (loading) return null;
 
+  // Aggregate progress across all goals — the headline bar mirrors the Tasks tab overview.
+  const doneCount = goals.filter((g) => g.completed || g.current >= g.target).length;
+  const avgPct = goals.length === 0 ? 0 : Math.round(
+    goals.reduce((sum, g) => sum + (g.target > 0 ? Math.min(100, (g.current / g.target) * 100) : 0), 0) / goals.length
+  );
+  const byPeriod: Record<GoalPeriod, number> = { week: 0, month: 0, ongoing: 0 };
+  for (const g of goals) byPeriod[g.period] = (byPeriod[g.period] ?? 0) + 1;
+  const PERIOD_SHORT: Record<GoalPeriod, string> = { week: "weekly", month: "monthly", ongoing: "ongoing" };
+
   return (
     <div className="space-y-3">
+      {/* Overall goal progress overview */}
+      {goals.length > 0 && (
+        <div className="bg-ink-900 border border-ink-700 rounded-xl p-3.5 space-y-2.5">
+          <div className="flex items-center justify-between">
+            <span className="font-mono text-[10px] uppercase tracking-widest text-parchment-700">
+              {doneCount} of {goals.length} complete
+            </span>
+            <span className="font-display italic text-base text-accent leading-none">{avgPct}%</span>
+          </div>
+          <div className="h-2 rounded-full bg-ink-800 overflow-hidden">
+            <div
+              className="h-full rounded-full bg-accent transition-all duration-300"
+              style={{ width: `${avgPct}%` }}
+            />
+          </div>
+          <div className="flex items-center gap-4 pt-0.5">
+            {(["week", "month", "ongoing"] as GoalPeriod[]).map((p) =>
+              byPeriod[p] > 0 ? (
+                <span key={p} className="flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-parchment-700" />
+                  <span className="font-mono text-[9px] text-parchment-700">
+                    {byPeriod[p]} {PERIOD_SHORT[p]}
+                  </span>
+                </span>
+              ) : null
+            )}
+          </div>
+        </div>
+      )}
+
       <div className="flex items-center justify-between">
         <p className="label">{goals.length} tracked</p>
         <button

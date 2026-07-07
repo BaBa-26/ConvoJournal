@@ -7,10 +7,17 @@ import {
 import { useSession, signIn } from "next-auth/react";
 import type { Reminder } from "@/types";
 import { loadDemoState, updateDemoState } from "@/lib/demoData";
+import ItemEditModal, { type NewItem } from "@/components/ItemEditModal";
 
 // ─── Reminder card ────────────────────────────────────────────────────────────
 
-function ReminderCard({ reminder }: { reminder: Reminder }) {
+function ReminderCard({
+  reminder, onEdit, onDelete,
+}: {
+  reminder: Reminder;
+  onEdit: (reminder: Reminder) => void;
+  onDelete: (id: string) => void;
+}) {
   const date = new Date(reminder.eventDate);
   const today    = isToday(date);
   const tomorrow = isTomorrow(date);
@@ -60,6 +67,35 @@ function ReminderCard({ reminder }: { reminder: Reminder }) {
           <p className="font-mono text-[10px] text-parchment-700 mt-2">
             {format(date, "EEEE, MMM d · h:mm a")}
           </p>
+        </div>
+
+        {/* Edit + Delete */}
+        <div className="flex-shrink-0 flex items-center gap-0.5">
+          <button
+            onClick={() => onEdit(reminder)}
+            className="p-1.5 rounded-lg text-parchment-700 hover:text-parchment-300
+                       transition-colors focus:outline-none min-w-[36px] min-h-[36px]
+                       flex items-center justify-center"
+            aria-label="Edit reminder"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 20h9" />
+              <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+            </svg>
+          </button>
+          <button
+            onClick={() => onDelete(reminder.id)}
+            className="p-1.5 -mr-1 rounded-lg text-parchment-700 hover:text-priority-high
+                       transition-colors focus:outline-none min-w-[36px] min-h-[36px]
+                       flex items-center justify-center"
+            aria-label="Delete reminder"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+              <path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/>
+            </svg>
+          </button>
         </div>
       </div>
     </div>
@@ -119,9 +155,10 @@ function AddReminderForm({ onAdd, onCancel }: { onAdd: (r: Partial<Reminder>) =>
 
 export default function RemindersScreen() {
   const { data: session, status } = useSession();
-  const [reminders, setReminders] = useState<Reminder[]>([]);
-  const [loading, setLoading]     = useState(true);
-  const [showAdd, setShowAdd]     = useState(false);
+  const [reminders, setReminders]     = useState<Reminder[]>([]);
+  const [loading, setLoading]         = useState(true);
+  const [showAdd, setShowAdd]         = useState(false);
+  const [editReminder, setEditReminder] = useState<Reminder | null>(null);
 
   const fetchReminders = useCallback(async () => {
     if (status === "loading") return;
@@ -171,6 +208,45 @@ export default function RemindersScreen() {
     }
   };
 
+  // Edit an existing reminder via the shared modal.
+  const handleUpdate = async (item: NewItem, editId?: string) => {
+    if (!editId) return;
+    const eventDate = new Date(item.date + "T" + item.time + ":00").toISOString();
+    const apply = (r: Reminder): Reminder => ({
+      ...r, title: item.title, eventDate, description: item.description || null,
+    });
+    const resort = (list: Reminder[]) =>
+      [...list].sort((a, b) => new Date(a.eventDate).getTime() - new Date(b.eventDate).getTime());
+    if (!session) {
+      setReminders((prev) => resort(prev.map((r) => (r.id === editId ? apply(r) : r))));
+      updateDemoState((state) => ({
+        ...state,
+        reminders: state.reminders.map((r) => (r.id === editId ? apply(r) : r)),
+      }));
+      return;
+    }
+    setReminders((prev) => resort(prev.map((r) => (r.id === editId ? apply(r) : r)))); // optimistic
+    const res = await fetch(`/api/reminders/${editId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title: item.title, eventDate, description: item.description || null }),
+    });
+    if (res.ok) {
+      const updated: Reminder = await res.json();
+      setReminders((prev) => resort(prev.map((r) => (r.id === editId ? updated : r))));
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!session) {
+      setReminders((prev) => prev.filter((r) => r.id !== id));
+      updateDemoState((state) => ({ ...state, reminders: state.reminders.filter((r) => r.id !== id) }));
+      return;
+    }
+    setReminders((prev) => prev.filter((r) => r.id !== id));
+    await fetch(`/api/reminders/${id}`, { method: "DELETE" });
+  };
+
   const upcoming = reminders.filter((r) => !isPast(new Date(r.eventDate)) || isToday(new Date(r.eventDate)));
   const past     = reminders.filter((r) => isPast(new Date(r.eventDate)) && !isToday(new Date(r.eventDate)));
 
@@ -194,6 +270,7 @@ export default function RemindersScreen() {
   }
 
   return (
+   <>
     <div className="flex flex-col flex-1 overflow-hidden">
       {/* Header */}
       <header className="px-5 pt-safe pt-5 pb-4 flex-shrink-0">
@@ -238,7 +315,9 @@ export default function RemindersScreen() {
             {upcoming.length > 0 && (
               <section className="space-y-2">
                 <p className="label px-1">Upcoming</p>
-                {upcoming.map((r) => <ReminderCard key={r.id} reminder={r} />)}
+                {upcoming.map((r) => (
+                  <ReminderCard key={r.id} reminder={r} onEdit={setEditReminder} onDelete={handleDelete} />
+                ))}
               </section>
             )}
 
@@ -254,12 +333,25 @@ export default function RemindersScreen() {
                   </div>
                 )}
                 {!upcoming.length && <p className="label px-1">Past</p>}
-                {past.map((r) => <ReminderCard key={r.id} reminder={r} />)}
+                {past.map((r) => (
+                  <ReminderCard key={r.id} reminder={r} onEdit={setEditReminder} onDelete={handleDelete} />
+                ))}
               </section>
             )}
           </div>
         )}
       </div>
     </div>
+
+    {editReminder && (
+      <ItemEditModal
+        defaultDate={new Date()}
+        lockType="reminder"
+        editItem={{ kind: "reminder", data: editReminder }}
+        onSave={handleUpdate}
+        onClose={() => setEditReminder(null)}
+      />
+    )}
+   </>
   );
 }

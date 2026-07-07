@@ -8,6 +8,7 @@ import { loadDemoState, updateDemoState } from "@/lib/demoData";
 import { computeTaskStats } from "@/lib/taskStats";
 import DraggableProgressBar from "@/components/DraggableProgressBar";
 import GoalsSection from "@/components/GoalsSection";
+import ItemEditModal, { type NewItem } from "@/components/ItemEditModal";
 
 // ─── Shared auth gate ─────────────────────────────────────────────────────────
 
@@ -44,12 +45,16 @@ const PRIORITY_COLORS: Record<string, string> = {
 
 function TaskRow({
   task,
+  showProgress,
   onToggle,
+  onEdit,
   onDelete,
   onProgressCommit,
 }: {
   task: Task;
+  showProgress: boolean;
   onToggle: (id: string, completed: boolean) => void;
+  onEdit: (task: Task) => void;
   onDelete: (id: string) => void;
   onProgressCommit: (id: string, progress: number) => void;
 }) {
@@ -135,8 +140,8 @@ function TaskRow({
           )}
         </div>
 
-        {/* Draggable progress — hidden once complete (bar would just be full) */}
-        {!task.completed && (
+        {/* Draggable progress — hidden in checklist view and once complete (bar would just be full) */}
+        {showProgress && !task.completed && (
           <DraggableProgressBar
             progress={localProgress}
             onChangeLive={setLocalProgress}
@@ -145,20 +150,35 @@ function TaskRow({
         )}
       </div>
 
-      {/* Delete */}
-      <button
-        onClick={handleDelete}
-        disabled={deleting}
-        className="flex-shrink-0 p-1.5 -mr-1 rounded-lg text-parchment-700
-                   hover:text-priority-high transition-colors focus:outline-none
-                   min-w-[36px] min-h-[36px] flex items-center justify-center"
-        aria-label="Delete task"
-      >
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
-             stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-          <path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/>
-        </svg>
-      </button>
+      {/* Edit + Delete */}
+      <div className="flex-shrink-0 flex items-center">
+        <button
+          onClick={() => onEdit(task)}
+          className="p-1.5 rounded-lg text-parchment-700
+                     hover:text-parchment-300 transition-colors focus:outline-none
+                     min-w-[36px] min-h-[36px] flex items-center justify-center"
+          aria-label="Edit task"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+               stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M12 20h9" />
+            <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+          </svg>
+        </button>
+        <button
+          onClick={handleDelete}
+          disabled={deleting}
+          className="p-1.5 -mr-1 rounded-lg text-parchment-700
+                     hover:text-priority-high transition-colors focus:outline-none
+                     min-w-[36px] min-h-[36px] flex items-center justify-center"
+          aria-label="Delete task"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+               stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+            <path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/>
+          </svg>
+        </button>
+      </div>
     </div>
   );
 }
@@ -233,6 +253,8 @@ export default function TasksScreen() {
   const [filter, setFilter]     = useState<TaskFilter>("pending");
   const [loading, setLoading]   = useState(true);
   const [showAdd, setShowAdd]   = useState(false);
+  const [editTask, setEditTask] = useState<Task | null>(null);
+  const [taskView, setTaskView] = useState<"bars" | "list">("bars");
   const [tab, setTab]           = useState<TabKey>("goals");
 
   const fetchTasks = useCallback(async () => {
@@ -340,6 +362,42 @@ export default function TasksScreen() {
     }
   };
 
+  // Edit an existing task via the shared modal. `date` empty → clears the due date.
+  const handleUpdate = async (item: NewItem, editId?: string) => {
+    if (!editId) return;
+    const dueDate = item.date ? new Date(item.date + "T12:00:00").toISOString() : null;
+    const apply = (t: Task): Task => ({
+      ...t,
+      title: item.title,
+      priority: item.priority as Task["priority"],
+      dueDate,
+      description: item.description || null,
+    });
+    if (!session) {
+      setTasks((prev) => prev.map((t) => (t.id === editId ? apply(t) : t)));
+      updateDemoState((state) => ({
+        ...state,
+        tasks: state.tasks.map((t) => (t.id === editId ? apply(t) : t)),
+      }));
+      return;
+    }
+    setTasks((prev) => prev.map((t) => (t.id === editId ? apply(t) : t))); // optimistic
+    const res = await fetch(`/api/tasks/${editId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: item.title,
+        priority: item.priority,
+        dueDate,
+        description: item.description || null,
+      }),
+    });
+    if (res.ok) {
+      const updated: Task = await res.json();
+      setTasks((prev) => prev.map((t) => (t.id === editId ? updated : t)));
+    }
+  };
+
   const filtered = tasks.filter((t) =>
     filter === "pending"   ? !t.completed :
     filter === "completed" ? t.completed  : true
@@ -354,6 +412,7 @@ export default function TasksScreen() {
   }
 
   return (
+   <>
     <div className="flex flex-col flex-1 overflow-hidden animate-fade-in">
       {/* Header */}
       <header className="px-5 pt-safe pt-5 pb-4 flex-shrink-0">
@@ -440,24 +499,49 @@ export default function TasksScreen() {
               <AddTaskForm onAdd={handleAdd} onCancel={() => setShowAdd(false)} />
             )}
 
-            {/* Filter pills */}
-            <div className="flex gap-1.5 bg-ink-900 rounded-xl p-1">
-              {(["all", "pending", "completed"] as TaskFilter[]).map((f) => (
-                <button
-                  key={f}
-                  onClick={() => setFilter(f)}
-                  className={`
-                    flex-1 py-2 rounded-lg text-[10px] font-mono uppercase tracking-widest
-                    transition-all duration-150 min-h-[36px]
-                    ${filter === f
-                      ? "bg-ink-700 text-parchment-200 shadow-sm"
-                      : "text-parchment-700 hover:text-parchment-500"
-                    }
-                  `}
-                >
-                  {f}
-                </button>
-              ))}
+            {/* Filter pills + progress/checklist view toggle */}
+            <div className="flex gap-1.5">
+              <div className="flex gap-1.5 bg-ink-900 rounded-xl p-1 flex-1">
+                {(["all", "pending", "completed"] as TaskFilter[]).map((f) => (
+                  <button
+                    key={f}
+                    onClick={() => setFilter(f)}
+                    className={`
+                      flex-1 py-2 rounded-lg text-[10px] font-mono uppercase tracking-widest
+                      transition-all duration-150 min-h-[36px]
+                      ${filter === f
+                        ? "bg-ink-700 text-parchment-200 shadow-sm"
+                        : "text-parchment-700 hover:text-parchment-500"
+                      }
+                    `}
+                  >
+                    {f}
+                  </button>
+                ))}
+              </div>
+              <div className="flex gap-1.5 bg-ink-900 rounded-xl p-1 flex-shrink-0">
+                {([
+                  { key: "bars", label: "progress", icon: "▤" },
+                  { key: "list", label: "checklist", icon: "☰" },
+                ] as const).map((v) => (
+                  <button
+                    key={v.key}
+                    onClick={() => setTaskView(v.key)}
+                    aria-label={v.label}
+                    title={v.label}
+                    className={`
+                      w-10 rounded-lg text-sm leading-none min-h-[36px] flex items-center justify-center
+                      transition-all duration-150
+                      ${taskView === v.key
+                        ? "bg-ink-700 text-parchment-200 shadow-sm"
+                        : "text-parchment-700 hover:text-parchment-500"
+                      }
+                    `}
+                  >
+                    {v.icon}
+                  </button>
+                ))}
+              </div>
             </div>
 
             {/* List */}
@@ -479,7 +563,9 @@ export default function TasksScreen() {
                   <TaskRow
                     key={task.id}
                     task={task}
+                    showProgress={taskView === "bars"}
                     onToggle={handleToggle}
+                    onEdit={setEditTask}
                     onDelete={handleDelete}
                     onProgressCommit={handleProgressCommit}
                   />
@@ -490,5 +576,16 @@ export default function TasksScreen() {
         )}
       </div>
     </div>
+
+    {editTask && (
+      <ItemEditModal
+        defaultDate={new Date()}
+        lockType="task"
+        editItem={{ kind: "task", data: editTask }}
+        onSave={handleUpdate}
+        onClose={() => setEditTask(null)}
+      />
+    )}
+   </>
   );
 }

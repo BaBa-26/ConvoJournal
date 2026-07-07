@@ -107,9 +107,9 @@ export type ThemeLayout  = "daybreak" | "hearth" | "mosaic";
 export type ColorMode    = "light" | "dark";
 export type TypeScale    = "sm" | "md" | "lg";
 export type SurfaceStyle = "solid" | "translucent";  // widget card look over a background
-export type WidgetKey   = "tonight" | "agenda" | "stats" | "streak" | "tomorrow" | "recent";
+export type WidgetKey   = "tonight" | "agenda" | "stats" | "taskprogress" | "goals" | "streak" | "tomorrow" | "recent";
 
-export const WIDGET_KEYS: WidgetKey[] = ["tonight", "agenda", "stats", "streak", "tomorrow", "recent"];
+export const WIDGET_KEYS: WidgetKey[] = ["tonight", "agenda", "stats", "taskprogress", "goals", "streak", "tomorrow", "recent"];
 
 // The 5 preset accent swatches from the dashboard design.
 export const ACCENT_SWATCHES = ["#c8a878", "#c87a6a", "#7a9a7a", "#6f9bd1", "#b07ab0"] as const;

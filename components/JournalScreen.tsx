@@ -48,20 +48,23 @@ function useTypingReveal(text: string, active: boolean): string {
 
 // ─── Phase components ─────────────────────────────────────────────────────────
 
+// The landing view: the mic is always front-and-centre. Past entries are one tap away
+// via the link at the bottom (only shown once there's history to browse).
 function IdlePhase({
   onStart,
   onWrite,
-  entries,
-  onSelectEntry,
+  entryCount,
+  onViewEntries,
 }: {
   onStart: () => void;
   onWrite: () => void;
-  entries: JournalEntry[];
-  onSelectEntry: (e: JournalEntry) => void;
+  entryCount: number;
+  onViewEntries: () => void;
 }) {
-  if (entries.length === 0) {
-    return (
-      <div className="flex flex-col items-center justify-center flex-1 gap-8 animate-fade-in">
+  return (
+    <div className="flex flex-col flex-1 animate-fade-in pb-nav">
+      {/* Mic + write — vertically centred in the space above the entries bar */}
+      <div className="flex flex-col items-center justify-center flex-1 gap-8">
         <div className="text-center space-y-1">
           <p className="font-mono text-xs uppercase tracking-[0.25em] text-parchment-600">
             {format(new Date(), "EEEE, MMMM d")}
@@ -123,18 +126,65 @@ function IdlePhase({
           </button>
         </div>
       </div>
-    );
-  }
 
+      {/* Past entries — a clear, full-width bar pinned at the bottom (only once there's history) */}
+      {entryCount > 0 && (
+        <button
+          onClick={onViewEntries}
+          className="flex items-center justify-center gap-2.5 w-full py-3.5 rounded-xl
+                     bg-ink-900 border border-ink-700 hover:border-gold/40 hover:bg-ink-800
+                     text-parchment-400 hover:text-parchment-200
+                     transition-all duration-150 active:scale-[0.99] focus:outline-none"
+          aria-label="View past entries"
+        >
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none"
+               stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M3 3v5h5" />
+            <path d="M3.05 13A9 9 0 1 0 6 5.3L3 8" />
+            <path d="M12 7v5l3 2" />
+          </svg>
+          <span className="font-mono text-xs tracking-[0.15em] uppercase">
+            View past entries
+          </span>
+          <span className="font-mono text-[10px] leading-none px-1.5 py-1 rounded-full
+                           bg-gold/15 text-gold border border-gold/25">
+            {entryCount}
+          </span>
+        </button>
+      )}
+    </div>
+  );
+}
+
+// The history list, reached from the mic page. Back returns to the mic; the two icons
+// start a fresh entry without going back first.
+function EntriesListView({
+  entries,
+  onBack,
+  onStart,
+  onWrite,
+  onSelectEntry,
+}: {
+  entries: JournalEntry[];
+  onBack: () => void;
+  onStart: () => void;
+  onWrite: () => void;
+  onSelectEntry: (e: JournalEntry) => void;
+}) {
   return (
     <div className="flex flex-col flex-1 gap-5 animate-fade-in">
-      {/* Header row with new-entry actions */}
+      {/* Header row: back + new-entry actions */}
       <div className="flex items-center justify-between">
         <div>
-          <p className="font-mono text-xs uppercase tracking-[0.25em] text-parchment-600">
-            {format(new Date(), "EEEE, MMMM d")}
-          </p>
-          <p className="font-display italic text-xl text-parchment-200 mt-1">All entries</p>
+          <button
+            onClick={onBack}
+            className="flex items-center gap-2 mb-1 text-parchment-600 hover:text-parchment-400
+                       transition-colors font-mono text-[11px] uppercase tracking-widest focus:outline-none"
+            aria-label="Back to recording"
+          >
+            ← back
+          </button>
+          <p className="font-display italic text-xl text-parchment-200">Past entries</p>
         </div>
         <div className="flex gap-2">
           <button
@@ -664,6 +714,7 @@ export default function JournalScreen() {
   const [activeContent, setActiveContent] = useState("");
   const [entries, setEntries]           = useState<JournalEntry[]>([]);
   const [selectedEntry, setSelectedEntry] = useState<JournalEntry | null>(null);
+  const [viewingEntries, setViewingEntries] = useState(false);
 
   // Autocomplete engine — lazy-init once on first use, persists for session
   const engineRef = useRef<AutocompleteEngine | null>(null);
@@ -774,6 +825,7 @@ export default function JournalScreen() {
     setPhase("idle");
     setActiveContent("");
     setSelectedEntry(null);
+    setViewingEntries(false); // land back on the mic page after a new entry
   }, [reset]);
 
   // ── Saved confirmation ─────────────────────────────────
@@ -852,11 +904,20 @@ export default function JournalScreen() {
           </div>
         )}
 
-        {phase === "idle"      && (
+        {phase === "idle" && !viewingEntries && (
           <IdlePhase
             onStart={handleStart}
             onWrite={() => setPhase("writing")}
+            entryCount={entries.length}
+            onViewEntries={() => setViewingEntries(true)}
+          />
+        )}
+        {phase === "idle" && viewingEntries && (
+          <EntriesListView
             entries={entries}
+            onBack={() => setViewingEntries(false)}
+            onStart={handleStart}
+            onWrite={() => setPhase("writing")}
             onSelectEntry={setSelectedEntry}
           />
         )}

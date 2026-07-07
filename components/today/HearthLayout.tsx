@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useTodayData } from "./useTodayData";
 import { useTodayHeader } from "./useTodayHeader";
 import { usePreferences } from "@/components/PreferencesProvider";
-import { AgendaList, StreakHeatmap, WeeklyStats, TonightCTA, RecentReflections } from "./widgets";
+import { AgendaList, StreakHeatmap, WeeklyStats, TaskTracker, GoalsTracker, TonightCTA, RecentReflections } from "./widgets";
 
 export default function HearthLayout() {
   const data = useTodayData();
@@ -48,6 +48,8 @@ export default function HearthLayout() {
             />
           )}
           {shown("agenda") && <AgendaList items={data.agendaItems} title="Still on today" />}
+          {shown("taskprogress") && <TaskTracker tasks={data.tasks} />}
+          {shown("goals") && <GoalsTracker />}
           {shown("streak") && (
             <StreakHeatmap
               days={data.streakDays}
