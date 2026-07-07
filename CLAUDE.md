@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-**Progress** (repo: CProgress) — mobile-first voice journaling PWA. Users speak a daily brain-dump; the app transcribes it, parses Yesterday/Today/Tomorrow sections, extracts tasks + reminders + trackable goals, and saves to Postgres. Auth-gated for saving; unauthenticated try-mode shows demo data from localStorage. A schedule/calendar view (`/schedule`) and a Goals screen (`/tasks`, unit-based progress) sit alongside the journal.
+**Progress** (repo: CProgress) — mobile-first voice journaling PWA. Users speak a daily brain-dump; the app transcribes it, parses Yesterday/Today/Tomorrow sections, extracts tasks + reminders + trackable goals, and saves to Postgres. Auth-gated for saving; unauthenticated try-mode shows demo data from localStorage. A schedule/calendar view (`/schedule`) and a Goals screen (`/tasks`, unit-based progress) sit alongside the journal. **Profile** (`/profile`) is split from **Settings** (`/settings`); the Journal tab is mic-first with "past entries" one tap away; tasks & reminders are editable everywhere; the Today dashboard has task + goals tracker widgets. A marketing **landing** (`/landing`, full-bleed, own chrome) and the **circle-with-dot brand mark** (`components/BrandMark.tsx`, also the favicon/PWA icon) round it out. **Web-push notifications** (reminders + daily goal nudge) are built but dormant until env is set — see Gotchas.
 
 ## Commands
 
@@ -62,6 +62,12 @@ Goals CRUD lives at `/api/goals` + `/api/goals/[id]` (auth-gated, IDOR-checked).
 ### Rate limiting
 `middleware.ts` uses an in-memory sliding window: 5 req/min on `/api/transcribe`, 20/min on `/api/analyze`, 60/min default. Rate limiting runs before auth checks.
 
+### Push notifications (web-push)
+Service worker `public/sw.js` shows notifications from pushes. `lib/push.ts` (client) requests permission + subscribes; `lib/webpush.ts` (server) signs/sends with VAPID and prunes dead subs. Opt-in slider lives in `components/NotificationsSettings.tsx` on the Profile page. Routes: `app/api/push/{subscribe,unsubscribe,test}` + secret-guarded `app/api/cron/notify` (fires due reminders by `eventDate` and a once-daily goal nudge at each user's `reminderTime`/`timezone`). Cron config in `vercel.json` (`0 9 * * *` — Hobby caps cron at once/day). Model `PushSubscription` + `User.timezone`/`lastGoalNudge` **are already migrated in prod**. **Still dormant until the VAPID + `CRON_SECRET` env vars are set (see Gotchas) — that's the top next step to make notifications actually fire.** `enablePush` requests permission *before* the VAPID check, so the browser prompt shows on the first slider click.
+
+### Chrome / routes
+Root layout renders `SideNav` (desktop) + `BottomNav` + `ProfileButton` (mobile) around a `max-w-2xl` column. All three now hide on `/login`, `/landing`, `/onboarding` (the landing breaks out full-bleed). `app/error.tsx` (route error boundary) + `app/not-found.tsx` (themed 404) handle failures.
+
 ## Key Files
 
 | File | Role |
@@ -95,6 +101,13 @@ NEXTAUTH_URL=           # http://localhost:3000 (dev) / https://... (prod)
 GOOGLE_CLIENT_ID=       # from Google Cloud Console
 GOOGLE_CLIENT_SECRET=   # from Google Cloud Console
 GEMINI_API_KEY=         # from Google AI Studio (aistudio.google.com) — AI Studio key, not Vertex AI
+
+# Push notifications — NOT YET SET (notifications are dormant until these exist locally + in Vercel):
+VAPID_PUBLIC_KEY=            # from `npx web-push generate-vapid-keys`
+VAPID_PRIVATE_KEY=          # (secret) from the same command
+NEXT_PUBLIC_VAPID_PUBLIC_KEY=  # SAME value as VAPID_PUBLIC_KEY (the client reads this)
+VAPID_SUBJECT=              # mailto:you@example.com
+CRON_SECRET=                # random; Vercel Cron sends it as `Authorization: Bearer <CRON_SECRET>`
 ```
 
 ## Code Conventions
@@ -125,6 +138,9 @@ GEMINI_API_KEY=         # from Google AI Studio (aistudio.google.com) — AI Stu
 - **Goal auto-advance is auth-only.** `/api/analyze` matches "I did X" against goals it reads from the DB; demo-mode goals live in localStorage and are invisible server-side, so journal entries can create demo goals but never increment them.
 - **Windows `next build` fails on `/icon`** (`@vercel/og` `fileURLToPath` Invalid URL) — a local-only quirk; the route builds fine on Vercel's Linux. Use `npx tsc --noEmit` to typecheck locally, and let Vercel build on deploy.
 - Editing a schedule item **cannot switch task↔reminder** (different tables) — the type toggle is locked in edit mode.
+- **Run `db:push` BEFORE (or with) deploying any schema change.** Deploying code whose Prisma schema added `User` columns without migrating first once broke Google sign-in in prod: NextAuth's PrismaAdapter selects *all* User columns, so the missing columns made every User query throw. The DB and code must move together.
+- **Vercel Git auto-deploy is broken** since the GitHub repo was renamed (`ConvoJournal` → `Progress`); pushing no longer triggers a build. **Deploy with `npx vercel --prod --yes`** (CLI is authed as `baba-26`, project `progress`). Push to `origin` too, just to keep the repo current.
+- **Notifications activation is the top pending next step:** run the VAPID/`CRON_SECRET` env setup above (DB is already migrated); on iPhone push only works after Add-to-Home-Screen; Hobby cron is once/day, so for timely reminders point an external pinger (cron-job.org) at `/api/cron/notify?key=<CRON_SECRET>`.
 ## 🛑 CRITICAL GUARDRAILS & SECURITY BEHAVIOR
 
 ### 1. Security & Data Protection

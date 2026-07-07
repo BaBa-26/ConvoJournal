@@ -1,27 +1,33 @@
 # Progress (ConvoJournal) — Handoff Doc
 
-Last updated: 2026-07-04. **Read "🟢 Latest" directly below for current state.** Everything under "🎨 Dashboard Redesign" and "⚠️ Last Session" further down is now **shipped history** — kept for context, not active work.
+Last updated: 2026-07-07. **Read "🟢 Latest" directly below for current state.** Everything under "🎨 Dashboard Redesign" and "⚠️ Last Session" further down is now **shipped history** — kept for context, not active work.
 
 ---
 
-## 🟢 Latest (2026-07-04) — shipped & deployed
+## 🟢 Latest (2026-07-07) — shipped & deployed
 
-All of the following is committed on `claude/nifty-hamilton-ISukC`, deployed to prod (`progress-coral-eight.vercel.app`), and verified live:
+All committed on `claude/nifty-hamilton-ISukC` and deployed to prod (`progress-coral-eight.vercel.app`) via `npx vercel --prod --yes` (Git auto-deploy is broken since the repo rename — see below). Typecheck clean, routes verified 200.
 
-- **Smart Goals** — new `Goal` model (`unit`/`target`/`current`/`period`), auth-gated + IDOR-checked CRUD at `/api/goals` + `/api/goals/[id]`. Gemini now **creates** goals from journal entries ("gym every day this week" → days/7) and **auto-advances** existing goals from reported progress ("went to the gym today" → +1), with hallucinated goal IDs filtered server-side and ownership re-checked in `/api/journal`. UI: `components/GoalsSection.tsx` (unit-aware bars, ± steppers, inline edit) atop the Goals screen (`TasksScreen.tsx`). Demo mode can create goals but not auto-advance them (no server-side goals to match).
-- **Editable calendar** — tasks & reminders on `/schedule` are now inline-editable (title/date/time/priority/notes) via the bottom-sheet modal; type is locked in edit mode. PATCH routes accept `description`.
-- **AI guardrails hardened** — phrase-based injection detector (`INJECTION_RE`), task/goal title sanitization, prompt-boundary re-assertion. Verified live: an "ignore all previous instructions / reveal your system prompt" payload is neutralized.
-- **Gemini cost cut** — `thinkingBudget: 0`, `maxOutputTokens: 2048`, `temperature: 0`, trimmed injected context (25 tasks / 20 goals). Warm `/api/analyze` ~6s → ~1s.
-- **Vercel Speed Insights** — `<SpeedInsights/>` in `app/layout.tsx`.
+- **New landing page** (`app/landing/page.tsx`) — the "Progress Landing" claude.ai/design: sticky nav, animated flowing-path hero, grow-in ring+dot mark, scroll-reveal sections, payoff mock, mission, CTAs. Scoped CSS (fonts mapped to next/font vars), full-bleed breakout, mobile responsive.
+- **Circle-with-dot brand mark** — `components/BrandMark.tsx` (SVG ring+dot) on landing, `SideNav` wordmark, and login; favicon (`app/icon.tsx`) + PWA icons (`api/pwa-icon`) redrawn as the mark. `SideNav`/`BottomNav`/`ProfileButton` all hide on `/login`,`/landing`,`/onboarding`.
+- **Error handling** — `app/error.tsx` (route error boundary) + `app/not-found.tsx` (themed 404).
+- **Web-push notifications** (built, dormant) — service worker, `lib/webpush`/`lib/push`, subscribe/unsubscribe/test routes, secret-guarded `/api/cron/notify` (due reminders + daily goal nudge), opt-in **slider** on Profile, `vercel.json` cron. `PushSubscription` + `User.timezone`/`lastGoalNudge` **already migrated in prod**. Needs VAPID + `CRON_SECRET` env to actually fire (see Next steps).
+- **Editable everywhere** — extracted shared `components/ItemEditModal.tsx`; tasks & reminders now editable/deletable on Tasks, Reminders, and Schedule.
+- **Journal mic-first** — recording is the landing view; a clear "View past entries" bar (nav-safe) opens history.
+- **Profile / Settings split** — `/profile` (identity, sign-in, notifications) separate from `/settings` (appearance, layout, background); sidebar account block; avatars route to `/profile`.
+- **Dashboard trackers** — task-progress + goals tracker widgets across all 3 layouts; Goals tab got an overall progress overview; Tasks got a progress/checklist view toggle.
+- **Fixes** — streak caption now reflects the real streak (was hard-coded "five weeks"); notif `enablePush` requests permission before the VAPID check so the browser prompt shows on the first slider click.
 
-### ⚠️ Migration workflow changed — use `db:push`, NOT `db:migrate`
-`prisma/migrations/migration_lock.toml` says `provider = "sqlite"` (early prototype) but the live DB is Neon Postgres, so `prisma migrate dev` fails **P3019**. Apply schema changes with `npm run db:push` (writes directly to the single prod Neon DB — needs explicit user OK). Preview first: `npx prisma migrate diff --from-schema-datasource prisma/schema.prisma --to-schema-datamodel prisma/schema.prisma --script`. The `Goal` table was applied this way and the DB is in sync.
+_Previously (2026-07-04, still live):_ Smart Goals (create + auto-advance from journal), inline-editable calendar, hardened AI injection guardrails, Gemini cost cut (`thinkingBudget:0`), Vercel Speed Insights.
 
-### ⏳ Pending — signed-out "one free try" funnel (awaiting mockup)
-Decided: signed-out users get **one** journal entry to try, see the extraction, then hit a **sign-in wall (no local save)**; a 2nd entry is gated. **Not built** — Aarrav is designing the flow in Claude and will bring a mockup. Note: `JournalScreen.tsx` currently hardcodes `requiresAuth={false}`, so signed-out users still save to local demo storage — the fix flips it to `requiresAuth={!session}` and gates the 2nd try via a localStorage flag consumed on successful analysis.
+### ⚠️ Deploy + migration workflow
+- **Deploy with `npx vercel --prod --yes`** — GitHub repo rename (`ConvoJournal`→`Progress`) broke Vercel Git auto-deploy, so pushing no longer builds. Push to `origin` too, to keep the repo current.
+- **`db:push` BEFORE/with any schema-change deploy.** `migrate dev` fails **P3019** (sqlite lock vs Neon Postgres), so use `npm run db:push` (writes straight to the single prod Neon DB — needs explicit OK). Lesson learned the hard way: deploying a schema that added `User` columns *without* migrating first broke Google sign-in (NextAuth's adapter selects all User columns).
 
-### 🔎 Cost follow-up (not started)
-Evaluate **Gemini 2.5 Flash-Lite** (or a 3.x tier) vs Flash via an A/B over ~20 real entries before switching — Lite is ~3–6× cheaper but must hold extraction quality. Also flagged: `/api/analyze` is public/unauthenticated, a token-burn abuse vector at scale — consider a budget guard or lightweight gate.
+### ⏳ Next steps
+1. **Activate notifications (top priority).** DB is already migrated; just add env (local `.env` + Vercel): generate VAPID via `npx web-push generate-vapid-keys` → set `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `NEXT_PUBLIC_VAPID_PUBLIC_KEY` (=public), `VAPID_SUBJECT`, `CRON_SECRET`; redeploy. iPhone needs Add-to-Home-Screen; Hobby cron is once/day, so for timely reminders point cron-job.org at `/api/cron/notify?key=<CRON_SECRET>`.
+2. **Signed-out "one free try" funnel** (awaiting mockup) — one entry, see the extraction, then a sign-in wall (no local save); gate the 2nd. `JournalScreen.tsx` hardcodes `requiresAuth={false}`; fix flips it to `requiresAuth={!session}` + a localStorage try-flag.
+3. **Cost follow-up** — A/B **Gemini 2.5 Flash-Lite** vs Flash over ~20 real entries before switching (Lite ~3–6× cheaper, must hold quality). `/api/analyze` is public — a token-burn vector at scale; consider a budget guard/gate.
 
 ---
 
