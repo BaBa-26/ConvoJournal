@@ -3,6 +3,7 @@
 import { signIn, useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
+import Link from "next/link";
 import BrandMark from "@/components/BrandMark";
 
 export default function LoginPage() {
@@ -115,6 +116,14 @@ export default function LoginPage() {
           {error && (
             <p className="font-mono text-xs text-priority-high text-center">{error}</p>
           )}
+
+          {/* Legal consent */}
+          <p className="font-mono text-[10px] text-parchment-700 text-center leading-5 px-2">
+            By continuing you agree to our{" "}
+            <Link href="/terms" className="text-parchment-500 hover:text-parchment-300 underline">Terms</Link>{" "}
+            and{" "}
+            <Link href="/privacy" className="text-parchment-500 hover:text-parchment-300 underline">Privacy Policy</Link>.
+          </p>
         </div>
 
         {/* Try-mode note */}

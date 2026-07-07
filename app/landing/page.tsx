@@ -404,6 +404,8 @@ export default function LandingPage() {
             <Link className="navlink" href="/journal">Journal</Link>
             <Link className="navlink" href="/schedule">Calendar</Link>
             <Link className="navlink" href="/tasks">Goals</Link>
+            <Link className="navlink" href="/privacy">Privacy</Link>
+            <Link className="navlink" href="/terms">Terms</Link>
           </div>
           <span className="ver">v1.0</span>
         </div>

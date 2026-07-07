@@ -23,6 +23,7 @@ const dmMono = DM_Mono({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL(process.env.NEXTAUTH_URL ?? "https://progress-coral-eight.vercel.app"),
   title: "Progress",
   description: "A quiet place for your thoughts",
   manifest: "/manifest.json",
@@ -30,6 +31,20 @@ export const metadata: Metadata = {
     capable: true,
     statusBarStyle: "black-translucent",
     title: "Progress",
+  },
+  openGraph: {
+    title: "Progress",
+    description: "A quiet place for your thoughts",
+    url: "/",
+    siteName: "Progress",
+    type: "website",
+    images: ["/opengraph-image"],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Progress",
+    description: "A quiet place for your thoughts",
+    images: ["/opengraph-image"],
   },
 };
 

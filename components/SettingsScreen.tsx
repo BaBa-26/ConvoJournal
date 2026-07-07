@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useSession, signOut } from "next-auth/react";
 import { resetDemoState } from "@/lib/demoData";
 import Modal from "@/components/Modal";
 import { usePreferences } from "@/components/PreferencesProvider";
@@ -160,12 +161,55 @@ function LayoutStudio() {
 
 export default function SettingsScreen() {
   const router = useRouter();
+  const { status } = useSession();
   const { prefs, stagePrefs, commitPrefs, revertPrefs, hasUnsaved } = usePreferences();
   const [resetting, setResetting] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [pendingHref, setPendingHref] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  // ── Your data: export + delete account (authenticated users only) ──
+  const [exporting, setExporting] = useState(false);
+  const [dataError, setDataError] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [confirmText, setConfirmText] = useState("");
+  const [deleting, setDeleting] = useState(false);
+
+  const handleExport = async () => {
+    setDataError(null);
+    setExporting(true);
+    try {
+      const res = await fetch("/api/user/export");
+      if (!res.ok) throw new Error("export failed");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "progress-export.json";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch {
+      setDataError("Couldn't export your data. Please try again.");
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const handleDeleteAccount = async () => {
+    setDataError(null);
+    setDeleting(true);
+    try {
+      const res = await fetch("/api/user", { method: "DELETE" });
+      if (!res.ok) throw new Error("delete failed");
+      await signOut({ callbackUrl: "/" });
+    } catch {
+      setDeleting(false);
+      setDataError("Couldn't delete your account. Please try again.");
+    }
+  };
 
   // Prompt before leaving Settings with unsaved edits.
   const onBlockedNav = useCallback((href: string) => setPendingHref(href), []);
@@ -399,6 +443,30 @@ export default function SettingsScreen() {
           </button>
         </section>
 
+        {/* ── Your data (authenticated only) ──────────────────── */}
+        {status === "authenticated" && (
+          <section className="card space-y-3">
+            <p className="label">Your data</p>
+            <p className="font-mono text-sm text-parchment-300 leading-6">
+              Download everything you&apos;ve saved, or permanently delete your account.
+            </p>
+            <button onClick={handleExport} disabled={exporting} className="btn-ghost w-full">
+              {exporting ? "Preparing…" : "Export my data"}
+            </button>
+            <button
+              onClick={() => {
+                setConfirmText("");
+                setDataError(null);
+                setConfirmDelete(true);
+              }}
+              className="w-full min-h-[44px] rounded-xl border border-priority-high/40 text-priority-high font-mono text-sm hover:bg-priority-high/10 transition-colors"
+            >
+              Delete account
+            </button>
+            {dataError && <p className="font-mono text-[11px] text-priority-high">{dataError}</p>}
+          </section>
+        )}
+
         <section className="card space-y-2">
           <p className="label">Shortcuts</p>
           <div className="flex flex-col gap-2">
@@ -446,6 +514,44 @@ export default function SettingsScreen() {
               Stay on settings
             </button>
           </div>
+        </div>
+      </Modal>
+
+      {/* Delete-account confirmation — requires typing DELETE */}
+      <Modal open={confirmDelete} onClose={() => !deleting && setConfirmDelete(false)}>
+        <div className="relative card w-full max-w-sm space-y-4 animate-slide-up">
+          <div className="space-y-1">
+            <p className="font-display italic text-lg text-priority-high">Delete your account?</p>
+            <p className="font-mono text-xs text-parchment-600 leading-5">
+              This permanently erases your entries, tasks, goals, and reminders. It cannot be undone.
+              Type <span className="text-parchment-300">DELETE</span> to confirm.
+            </p>
+          </div>
+          <input
+            type="text"
+            className="input"
+            value={confirmText}
+            onChange={(e) => setConfirmText(e.target.value)}
+            placeholder="DELETE"
+            autoFocus
+          />
+          <div className="flex flex-col gap-2">
+            <button
+              onClick={handleDeleteAccount}
+              disabled={confirmText !== "DELETE" || deleting}
+              className="w-full min-h-[44px] rounded-xl bg-priority-high text-white font-mono text-sm disabled:opacity-40 transition-opacity"
+            >
+              {deleting ? "Deleting…" : "Delete my account"}
+            </button>
+            <button
+              onClick={() => setConfirmDelete(false)}
+              disabled={deleting}
+              className="btn-ghost w-full"
+            >
+              Cancel
+            </button>
+          </div>
+          {dataError && <p className="font-mono text-[11px] text-priority-high">{dataError}</p>}
         </div>
       </Modal>
     </div>
