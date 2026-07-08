@@ -1,5 +1,5 @@
-import ProfileScreen from "@/components/ProfileScreen";
+import SettingsRedirect from "@/components/settings/SettingsRedirect";
 
 export default function ProfilePage() {
-  return <ProfileScreen />;
+  return <SettingsRedirect category="account" />;
 }

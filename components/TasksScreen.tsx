@@ -4,7 +4,8 @@ import { useState, useEffect, useCallback } from "react";
 import { format } from "date-fns";
 import { useSession, signIn } from "next-auth/react";
 import type { Task, TaskFilter } from "@/types";
-import { loadDemoState, updateDemoState } from "@/lib/demoData";
+import { loadLocal, updateLocal } from "@/lib/localStore";
+import { useDataMode } from "@/components/PreferencesProvider";
 import { computeTaskStats } from "@/lib/taskStats";
 import DraggableProgressBar from "@/components/DraggableProgressBar";
 import GoalsSection from "@/components/GoalsSection";
@@ -249,6 +250,8 @@ type TabKey = "goals" | "tasks";
 
 export default function TasksScreen() {
   const { data: session, status } = useSession();
+  const dataMode = useDataMode();
+  const remote = dataMode === "remote";
   const [tasks, setTasks]       = useState<Task[]>([]);
   const [filter, setFilter]     = useState<TaskFilter>("pending");
   const [loading, setLoading]   = useState(true);
@@ -259,24 +262,24 @@ export default function TasksScreen() {
 
   const fetchTasks = useCallback(async () => {
     if (status === "loading") return;
-    if (!session) {
-      setTasks(loadDemoState().tasks);
+    if (!remote) {
+      setTasks(loadLocal().tasks);
       setLoading(false);
       return;
     }
     const res = await fetch("/api/tasks");
     if (res.ok) setTasks(await res.json());
     setLoading(false);
-  }, [session, status]);
+  }, [remote, status]);
 
   useEffect(() => { fetchTasks(); }, [fetchTasks]);
 
   const handleToggle = async (id: string, completed: boolean) => {
     // Completing a task snaps progress to 100 (mirrors the API sync rule).
     const patch = (t: Task): Task => ({ ...t, completed, progress: completed ? 100 : t.progress });
-    if (!session) {
+    if (!remote) {
       setTasks((prev) => prev.map((t) => (t.id === id ? patch(t) : t)));
-      updateDemoState((state) => ({
+      updateLocal((state) => ({
         ...state,
         tasks: state.tasks.map((t) => (t.id === id ? patch(t) : t)),
       }));
@@ -296,9 +299,9 @@ export default function TasksScreen() {
   const handleProgressCommit = async (id: string, progress: number) => {
     const completed = progress >= 100;
     const patch = (t: Task): Task => ({ ...t, progress, completed });
-    if (!session) {
+    if (!remote) {
       setTasks((prev) => prev.map((t) => (t.id === id ? patch(t) : t)));
-      updateDemoState((state) => ({
+      updateLocal((state) => ({
         ...state,
         tasks: state.tasks.map((t) => (t.id === id ? patch(t) : t)),
       }));
@@ -317,9 +320,9 @@ export default function TasksScreen() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!session) {
+    if (!remote) {
       setTasks((prev) => prev.filter((t) => t.id !== id));
-      updateDemoState((state) => ({
+      updateLocal((state) => ({
         ...state,
         tasks: state.tasks.filter((t) => t.id !== id),
       }));
@@ -330,7 +333,7 @@ export default function TasksScreen() {
   };
 
   const handleAdd = async (data: Partial<Task>) => {
-    if (!session) {
+    if (!remote) {
       const now = new Date().toISOString();
       const task: Task = {
         id: `demo-task-${Date.now()}`,
@@ -346,7 +349,7 @@ export default function TasksScreen() {
         updatedAt: now,
       };
       setTasks((prev) => [task, ...prev]);
-      updateDemoState((state) => ({ ...state, tasks: [task, ...state.tasks] }));
+      updateLocal((state) => ({ ...state, tasks: [task, ...state.tasks] }));
       setShowAdd(false);
       return;
     }
@@ -373,9 +376,9 @@ export default function TasksScreen() {
       dueDate,
       description: item.description || null,
     });
-    if (!session) {
+    if (!remote) {
       setTasks((prev) => prev.map((t) => (t.id === editId ? apply(t) : t)));
-      updateDemoState((state) => ({
+      updateLocal((state) => ({
         ...state,
         tasks: state.tasks.map((t) => (t.id === editId ? apply(t) : t)),
       }));

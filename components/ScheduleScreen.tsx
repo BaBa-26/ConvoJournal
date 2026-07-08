@@ -8,7 +8,8 @@ import {
 } from "date-fns";
 import { useSession } from "next-auth/react";
 import type { Task, Reminder } from "@/types";
-import { loadDemoState, updateDemoState } from "@/lib/demoData";
+import { loadLocal, updateLocal } from "@/lib/localStore";
+import { useDataMode } from "@/components/PreferencesProvider";
 import ItemEditModal, { type NewItem } from "@/components/ItemEditModal";
 
 // ─── Priority colours ──────────────────────────────────────────────────────────
@@ -383,7 +384,9 @@ function UpcomingFeed({
 // ─── Main component ────────────────────────────────────────────────────────────
 
 export default function ScheduleScreen() {
-  const { data: session, status } = useSession();
+  const { status } = useSession();
+  const dataMode = useDataMode();
+  const remote = dataMode === "remote";
   const [month,       setMonth]       = useState(new Date());
   const [selectedDay, setSelectedDay] = useState(new Date());
   const [tasks,       setTasks]       = useState<Task[]>([]);
@@ -394,10 +397,10 @@ export default function ScheduleScreen() {
 
   const fetchAll = useCallback(async () => {
     if (status === "loading") return;
-    if (!session) {
-      const demo = loadDemoState();
-      setTasks(demo.tasks);
-      setReminders(demo.reminders);
+    if (!remote) {
+      const local = loadLocal();
+      setTasks(local.tasks);
+      setReminders(local.reminders);
       setLoading(false);
       return;
     }
@@ -408,14 +411,14 @@ export default function ScheduleScreen() {
     setTasks(Array.isArray(t) ? t : []);
     setReminders(Array.isArray(r) ? r : []);
     setLoading(false);
-  }, [session, status]);
+  }, [remote, status]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
   const handleToggleTask = useCallback(async (id: string, completed: boolean) => {
-    if (!session) {
+    if (!remote) {
       setTasks(prev => prev.map(t => t.id === id ? { ...t, completed } : t));
-      updateDemoState((state) => ({
+      updateLocal((state) => ({
         ...state,
         tasks: state.tasks.map((t) => (t.id === id ? { ...t, completed } : t)),
       }));
@@ -427,27 +430,27 @@ export default function ScheduleScreen() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ completed }),
     });
-  }, [session]);
+  }, [remote]);
 
   const handleDeleteTask = useCallback(async (id: string) => {
-    if (!session) {
+    if (!remote) {
       setTasks(prev => prev.filter(t => t.id !== id));
-      updateDemoState((state) => ({ ...state, tasks: state.tasks.filter((t) => t.id !== id) }));
+      updateLocal((state) => ({ ...state, tasks: state.tasks.filter((t) => t.id !== id) }));
       return;
     }
     setTasks(prev => prev.filter(t => t.id !== id));
     await fetch(`/api/tasks/${id}`, { method: "DELETE" });
-  }, [session]);
+  }, [remote]);
 
   const handleDeleteReminder = useCallback(async (id: string) => {
-    if (!session) {
+    if (!remote) {
       setReminders(prev => prev.filter(r => r.id !== id));
-      updateDemoState((state) => ({ ...state, reminders: state.reminders.filter((r) => r.id !== id) }));
+      updateLocal((state) => ({ ...state, reminders: state.reminders.filter((r) => r.id !== id) }));
       return;
     }
     setReminders(prev => prev.filter(r => r.id !== id));
     await fetch(`/api/reminders/${id}`, { method: "DELETE" });
-  }, [session]);
+  }, [remote]);
 
   const handleSelectDay = useCallback((day: Date) => {
     setSelectedDay(day);
@@ -459,7 +462,7 @@ export default function ScheduleScreen() {
     type: "task" | "reminder";
     title: string; date: string; time: string; priority: string; description: string;
   }) => {
-    if (!session) {
+    if (!remote) {
       const now = new Date().toISOString();
       if (type === "task") {
         const task: Task = {
@@ -476,7 +479,7 @@ export default function ScheduleScreen() {
           updatedAt: now,
         };
         setTasks(prev => [...prev, task]);
-        updateDemoState((state) => ({ ...state, tasks: [...state.tasks, task] }));
+        updateLocal((state) => ({ ...state, tasks: [...state.tasks, task] }));
       } else {
         const reminder: Reminder = {
           id: `demo-reminder-${Date.now()}`,
@@ -488,7 +491,7 @@ export default function ScheduleScreen() {
           createdAt: now,
         };
         setReminders(prev => [...prev, reminder]);
-        updateDemoState((state) => ({ ...state, reminders: [...state.reminders, reminder] }));
+        updateLocal((state) => ({ ...state, reminders: [...state.reminders, reminder] }));
       }
       return;
     }
@@ -518,7 +521,7 @@ export default function ScheduleScreen() {
       const reminder = await res.json();
       setReminders(prev => [...prev, reminder]);
     }
-  }, [session]);
+  }, [remote]);
 
   const handleEditTask     = useCallback((task: Task)         => setEditItem({ kind: "task",     data: task }),     []);
   const handleEditReminder = useCallback((reminder: Reminder) => setEditItem({ kind: "reminder", data: reminder }), []);
@@ -530,9 +533,9 @@ export default function ScheduleScreen() {
       const apply = (t: Task): Task => ({
         ...t, title: item.title, priority: item.priority as Task["priority"], dueDate, description: item.description || null,
       });
-      if (!session) {
+      if (!remote) {
         setTasks(prev => prev.map(t => t.id === editId ? apply(t) : t));
-        updateDemoState((state) => ({ ...state, tasks: state.tasks.map(t => t.id === editId ? apply(t) : t) }));
+        updateLocal((state) => ({ ...state, tasks: state.tasks.map(t => t.id === editId ? apply(t) : t) }));
         return;
       }
       setTasks(prev => prev.map(t => t.id === editId ? apply(t) : t)); // optimistic
@@ -546,9 +549,9 @@ export default function ScheduleScreen() {
       const eventDate = new Date(item.date + "T" + item.time + ":00").toISOString();
       const patch = { title: item.title, eventDate, description: item.description || null };
       const apply = (r: Reminder): Reminder => ({ ...r, title: item.title, eventDate, description: item.description || null });
-      if (!session) {
+      if (!remote) {
         setReminders(prev => prev.map(r => r.id === editId ? apply(r) : r));
-        updateDemoState((state) => ({ ...state, reminders: state.reminders.map(r => r.id === editId ? apply(r) : r) }));
+        updateLocal((state) => ({ ...state, reminders: state.reminders.map(r => r.id === editId ? apply(r) : r) }));
         return;
       }
       setReminders(prev => prev.map(r => r.id === editId ? apply(r) : r)); // optimistic
@@ -559,7 +562,7 @@ export default function ScheduleScreen() {
       });
       if (res.ok) { const updated = await res.json(); setReminders(prev => prev.map(r => r.id === editId ? updated : r)); }
     }
-  }, [session]);
+  }, [remote]);
 
   // Modal entry point — routes to create or update based on whether an id is supplied.
   const handleSaveItem = useCallback(async (item: NewItem, editId?: string) => {

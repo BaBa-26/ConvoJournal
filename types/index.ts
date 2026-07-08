@@ -52,6 +52,9 @@ export interface JournalEntry {
   updatedAt: string;
   tasks?: Task[];
   reminders?: Reminder[];
+  // Client-only: entry is kept on this device (vault) and never synced to the server.
+  // Not a DB column — only set on local/vault entries.
+  private?: boolean;
 }
 
 // ─── Parser / AI output shape ─────────────────────────────────────────────────
@@ -130,6 +133,13 @@ export const BACKGROUND_PRESETS: BackgroundPreset[] = [
 
 // Maps the type-scale token to the CSS `--type-scale` multiplier (see the mockup's `--sc`).
 export const TYPE_SCALE_VALUE: Record<TypeScale, number> = { sm: 0.9, md: 1, lg: 1.12 };
+
+// Where the user's journal data lives. `storageMode` is a per-device choice (localStorage,
+// not synced): "sync" = save to the account (cross-device), "local" = keep on this device only.
+// `dataMode` is the resolved backing source the app actually reads/writes: "remote" only when
+// signed in AND syncing, otherwise "local".
+export type StorageMode = "sync" | "local";
+export type DataMode = "remote" | "local";
 
 export interface UserPreferences {
   displayName: string | null;

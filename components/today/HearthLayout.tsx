@@ -1,15 +1,16 @@
 "use client";
 
-import Link from "next/link";
 import { useTodayData } from "./useTodayData";
 import { useTodayHeader } from "./useTodayHeader";
 import { usePreferences } from "@/components/PreferencesProvider";
+import { useSettingsUI } from "@/components/settings/SettingsUIProvider";
 import { AgendaList, StreakHeatmap, WeeklyStats, TaskTracker, GoalsTracker, TonightCTA, RecentReflections } from "./widgets";
 
 export default function HearthLayout() {
   const data = useTodayData();
   const { dateLabel, greetWord, firstName, reminderLabel } = useTodayHeader();
   const { prefs } = usePreferences();
+  const { openSettings } = useSettingsUI();
 
   // Hearth keeps its curated narrative order (its look is hero-driven), but respects hide/show.
   const shown = (key: string) => !prefs.hiddenWidgets.includes(key as never);
@@ -60,12 +61,12 @@ export default function HearthLayout() {
           )}
           {shown("recent") && <RecentReflections entries={data.recentEntries} label="From the archive" />}
 
-          <Link
-            href="/settings"
+          <button
+            onClick={() => openSettings()}
             className="font-mono text-[10px] text-muted-foreground uppercase tracking-[0.18em] text-center hover:text-foreground transition-colors"
           >
             profile &amp; settings →
-          </Link>
+          </button>
         </div>
       </div>
     </div>

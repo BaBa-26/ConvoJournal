@@ -26,8 +26,9 @@ export default function PrivacyPage() {
         <Section title="What we collect">
           <ul className="space-y-2 list-disc pl-5">
             <li><strong className="text-parchment-200">Account info:</strong> when you sign in with Google, we receive your name, email, and profile image.</li>
-            <li><strong className="text-parchment-200">Your content:</strong> journal entries (including audio you record and its transcription), and the tasks, goals, reminders, and moods derived from them.</li>
+            <li><strong className="text-parchment-200">Your content:</strong> your journal entries and the tasks, goals, reminders, and moods derived from them. Audio you record is processed to produce a transcript and is <strong className="text-parchment-200">not stored</strong> — only the transcript is saved.</li>
             <li><strong className="text-parchment-200">Preferences:</strong> app settings you choose (theme, layout, reminder time, etc.).</li>
+            <li><strong className="text-parchment-200">Notification data:</strong> if you enable push notifications, we store the subscription identifier your browser provides so we can deliver them.</li>
             <li><strong className="text-parchment-200">Basic technical data:</strong> standard logs and performance metrics needed to run the service.</li>
           </ul>
         </Section>
@@ -51,7 +52,9 @@ export default function PrivacyPage() {
         <Section title="Retention">
           <p>
             We keep your data until you delete it. Deleting your account permanently removes your entries,
-            tasks, goals, and reminders from our database.
+            tasks, goals, and reminders from our database. Some data (like typing suggestions learned from
+            your entries, or try-mode entries made before signing in) lives only in your browser&apos;s local
+            storage — deleting your account also clears it on that device.
           </p>
         </Section>
 

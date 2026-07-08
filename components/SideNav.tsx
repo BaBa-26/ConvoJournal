@@ -1,9 +1,13 @@
 "use client";
 
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { usePreferences } from "@/components/PreferencesProvider";
+import { useSettingsUI } from "@/components/settings/SettingsUIProvider";
+import SettingsMenuPanel from "@/components/settings/SettingsMenuPanel";
+import type { SettingsCategory } from "@/components/settings/categories";
 import { DEMO_PROFILE } from "@/lib/demoData";
 import BrandMark from "@/components/BrandMark";
 
@@ -40,6 +44,31 @@ export default function SideNav() {
   const pathname = usePathname();
   const { data: session } = useSession();
   const { prefs } = usePreferences();
+  const { openSettings } = useSettingsUI();
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  // Close the quick-menu on outside click or Escape.
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onDown = (e: PointerEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setMenuOpen(false);
+    };
+    document.addEventListener("pointerdown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("pointerdown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [menuOpen]);
+
+  const pickCategory = (cat: SettingsCategory) => {
+    setMenuOpen(false);
+    openSettings(cat);
+  };
 
   const name = prefs.displayName ?? session?.user?.name ?? DEMO_PROFILE.name;
   const image = session?.user?.image ?? null;
@@ -93,11 +122,11 @@ export default function SideNav() {
       {/* Footer */}
       <div className="mx-4 border-t border-ink-700 mt-3 mb-3" />
       <div className="px-3 pb-5 space-y-2">
-        {/* Account — avatar + name, links to the profile page */}
-        <Link
-          href="/profile"
+        {/* Account — avatar + name, opens the settings dialog on the Account tab */}
+        <button
+          onClick={() => openSettings("account")}
           aria-label="Your profile and account"
-          className="flex items-center gap-2.5 px-2.5 py-2 rounded-xl border border-ink-800
+          className="flex items-center gap-2.5 px-2.5 py-2 rounded-xl border border-ink-800 w-full text-left
                      hover:border-ink-700 hover:bg-ink-900 transition-colors group"
         >
           {image ? (
@@ -116,15 +145,23 @@ export default function SideNav() {
             <p className="font-mono text-[9px] text-parchment-700 truncate">{subLabel}</p>
           </div>
           <span className="text-parchment-800 group-hover:text-parchment-500 transition-colors">→</span>
-        </Link>
+        </button>
 
-        <Link
-          href="/settings"
-          className="flex items-center justify-between px-3 py-2 rounded-xl text-parchment-700 hover:text-parchment-300 transition-colors"
-        >
-          <span className="font-mono text-[10px] uppercase tracking-[0.15em]">Settings</span>
-          <span className="text-parchment-800">⚙</span>
-        </Link>
+        {/* Settings — opens a quick-menu that rises above the footer; pick a section to open it */}
+        <div ref={menuRef} className="relative">
+          <SettingsMenuPanel open={menuOpen} placement="up" onPick={pickCategory} className="left-0" />
+          <button
+            onClick={() => setMenuOpen((v) => !v)}
+            aria-haspopup="menu"
+            aria-expanded={menuOpen}
+            className={`flex items-center justify-between w-full px-3 py-2 rounded-xl transition-colors ${
+              menuOpen ? "text-parchment-300 bg-ink-900" : "text-parchment-700 hover:text-parchment-300"
+            }`}
+          >
+            <span className="font-mono text-[10px] uppercase tracking-[0.15em]">Settings</span>
+            <span className="text-parchment-800">⚙</span>
+          </button>
+        </div>
         <p className="px-2 font-mono text-[9px] text-parchment-800 uppercase tracking-widest">
           v1.0
         </p>

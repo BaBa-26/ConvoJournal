@@ -222,7 +222,7 @@ export default function LandingPage() {
             <a className="navlink navlinks" href="#peek">The payoff</a>
             <a className="navlink navlinks" href="#mission">Mission</a>
             <Link className="btn btn-g" href="/login">Sign in</Link>
-            <Link className="btn btn-p" href="/login">Get started</Link>
+            <Link className="btn btn-p" href="/journal">Get started</Link>
           </div>
         </div>
       </div>
@@ -249,7 +249,7 @@ export default function LandingPage() {
             structured reflection, tasks, and reminders, threaded through your week. Zero forms.
           </p>
           <div className="herocta">
-            <Link className="btn btn-p" href="/login">Start for free →</Link>
+            <Link className="btn btn-p" href="/journal">Start for free →</Link>
             <a className="btn btn-g" href="#how">See how it works</a>
           </div>
           <p className="trust">No typing required · works on any device</p>
@@ -320,7 +320,7 @@ export default function LandingPage() {
                   <span>Reminders scheduled to the exact day and time — keep coming back to keep the streak</span>
                 </li>
               </ul>
-              <Link className="btn btn-p" href="/login" style={{ marginTop: 32 }}>
+              <Link className="btn btn-p" href="/journal" style={{ marginTop: 32 }}>
                 Try it on today →
               </Link>
             </div>
@@ -387,7 +387,7 @@ export default function LandingPage() {
             Speak once a day. Let the structure, the tasks, and the timeline build themselves.
           </p>
           <div className="herocta">
-            <Link className="btn btn-p" href="/login">Start for free →</Link>
+            <Link className="btn btn-p" href="/journal">Start for free →</Link>
           </div>
         </div>
       </section>

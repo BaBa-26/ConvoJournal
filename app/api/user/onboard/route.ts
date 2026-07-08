@@ -5,7 +5,8 @@ import { requireAuth } from "@/lib/auth";
 
 const OnboardSchema = z.object({
   displayName:  z.string().trim().min(1).max(50),
-  journalMode:  z.enum(["voice", "text", "both"]),
+  // Optional daily reflection nudge time (HH:mm, 24h). Skippable during onboarding.
+  reminderTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Expected HH:mm").nullish(),
 });
 
 export async function POST(req: NextRequest) {
@@ -19,11 +20,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Invalid input" }, { status: 400 });
     }
 
-    const { displayName, journalMode } = parsed.data;
+    const { displayName, reminderTime } = parsed.data;
 
     await prisma.user.update({
       where: { id: auth.userId },
-      data:  { displayName, journalMode, onboarded: true },
+      data:  { displayName, reminderTime: reminderTime ?? null, onboarded: true },
     });
 
     return NextResponse.json({ ok: true });

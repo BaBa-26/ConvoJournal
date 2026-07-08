@@ -1,4 +1,4 @@
-import type { Goal, JournalEntry, ParsedEntry, Reminder, Task, UserPreferences } from "@/types";
+import type { Goal, JournalEntry, ParsedEntry, Reminder, Task, UserPreferences, GoalPeriod } from "@/types";
 import { DEFAULT_PREFERENCES } from "@/types";
 
 export interface DemoState {
@@ -12,10 +12,15 @@ export interface DemoState {
   seedDay: string; // YYYY-MM-DD the seed was anchored to (local time)
 }
 
+// Ephemeral signed-out try-mode store (reseeds daily — preserves the clean-start funnel).
 export const DEMO_STORAGE_KEY = "progress-demo-state-v1";
+// Persistent local vault for signed-in users who turn cloud sync OFF. Same shape, but it
+// holds the user's *real* data, so it must NEVER reseed/wipe (see loadStateFromKey).
+export const VAULT_STORAGE_KEY = "progress:localVault";
 
 // Bump to force every device back to a fresh seed after the seed content changes.
-export const DEMO_SEED_VERSION = 4;
+// v5 = clean-start funnel: signed-out visitors begin empty (no preloaded sample content).
+export const DEMO_SEED_VERSION = 5;
 
 // Local-time day key. The seed reseeds when this rolls over so every visitor keeps seeing the
 // same small set of sample entries, anchored to *their* today (streak/heatmap stay correct).
@@ -32,20 +37,6 @@ export const DEMO_PROFILE = {
 
 function makeId(prefix: string): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-}
-
-function makeIso(daysOffset: number, hours: number, minutes: number): string {
-  const date = new Date();
-  date.setDate(date.getDate() + daysOffset);
-  date.setHours(hours, minutes, 0, 0);
-  return date.toISOString();
-}
-
-function makeEntryDate(daysOffset: number): string {
-  const date = new Date();
-  date.setDate(date.getDate() + daysOffset);
-  date.setHours(12, 0, 0, 0);
-  return date.toISOString();
 }
 
 function cloneTask(task: Task): Task {
@@ -69,282 +60,14 @@ function cloneEntry(entry: JournalEntry): JournalEntry {
 }
 
 export function createDemoState(): DemoState {
-  const now = new Date().toISOString();
-
-  const journalTask: Task = {
-    id: "demo-task-refactor-recorder",
-    title: "Refactor recorder hooks",
-    description: "Split recorder state from transcription flow",
-    dueDate: makeIso(0, 14, 0),
-    completed: false,
-    progress: 40,
-    priority: "medium",
-    source: "journal",
-    journalEntryId: "demo-entry-today",
-    createdAt: now,
-    updatedAt: now,
-  };
-
-  const manualTask: Task = {
-    id: "demo-task-update-review",
-    title: "Send project update",
-    description: "Summarize the current testing pass",
-    dueDate: makeIso(0, 17, 30),
-    completed: false,
-    progress: 75,
-    priority: "high",
-    source: "manual",
-    journalEntryId: null,
-    createdAt: now,
-    updatedAt: now,
-  };
-
-  const tomorrowTask: Task = {
-    id: "demo-task-book-dentist",
-    title: "Book dentist appointment",
-    description: null,
-    dueDate: makeIso(1, 9, 0),
-    completed: false,
-    progress: 0,
-    priority: "low",
-    source: "manual",
-    journalEntryId: null,
-    createdAt: now,
-    updatedAt: now,
-  };
-
-  const doneTask: Task = {
-    id: "demo-task-ship-fix",
-    title: "Ship reminders auth fix",
-    description: "Add ownership check to PATCH/DELETE",
-    dueDate: makeIso(-1, 16, 0),
-    completed: true,
-    progress: 100,
-    priority: "high",
-    source: "manual",
-    journalEntryId: null,
-    createdAt: now,
-    updatedAt: now,
-  };
-
-  const reminderToday: Reminder = {
-    id: "demo-reminder-call-maya",
-    title: "Call Maya about the walk-through",
-    description: "Keep it short and confirm the demo steps",
-    eventDate: makeIso(0, 18, 15),
-    reminded: false,
-    journalEntryId: "demo-entry-today",
-    createdAt: now,
-  };
-
-  const reminderTomorrow: Reminder = {
-    id: "demo-reminder-rent",
-    title: "Pay rent",
-    description: "Send before noon",
-    eventDate: makeIso(1, 9, 0),
-    reminded: false,
-    journalEntryId: null,
-    createdAt: now,
-  };
-
-  const todayEntry: JournalEntry = {
-    id: "demo-entry-today",
-    date: makeEntryDate(0),
-    rawContent: "Today I need to tighten the journal flow, check the settings page, and make sure the demo store feels believable.",
-    yesterday: "Yesterday I cleaned up the layout and resolved the merge conflict.",
-    today: "Today I need to polish the testing path and verify the archive lists.",
-    tomorrow: "Tomorrow I should do a final pass on the calendar and tasks views.",
-    mood: "focused",
-    createdAt: now,
-    updatedAt: now,
-    tasks: [cloneTask(journalTask), cloneTask(manualTask)],
-    reminders: [cloneReminder(reminderToday)],
-  };
-
-  const yesterdayEntry: JournalEntry = {
-    id: "demo-entry-yesterday",
-    date: makeEntryDate(-1),
-    rawContent: "Yesterday felt productive. I mapped the screens, then took a break before wiring the settings page.",
-    yesterday: "Yesterday I mapped the screens and the data flow.",
-    today: "Today I want to validate the demo mode with fresh eyes.",
-    tomorrow: "Tomorrow I’ll prune any loose UI edges.",
-    mood: "calm",
-    createdAt: now,
-    updatedAt: now,
-    tasks: [cloneTask(tomorrowTask)],
-    reminders: [],
-  };
-
-  const olderEntry: JournalEntry = {
-    id: "demo-entry-older",
-    date: makeEntryDate(-3),
-    rawContent: "A quieter day. I wrote notes, tested the calendar, and logged a few follow-ups.",
-    yesterday: "I wrote notes and cleaned up the calendar layout.",
-    today: "I want to keep the motion subtle and the copy calm.",
-    tomorrow: "Tomorrow I’ll revisit the sidebar and profile page.",
-    mood: "steady",
-    createdAt: now,
-    updatedAt: now,
-    tasks: [],
-    reminders: [cloneReminder(reminderTomorrow)],
-  };
-
-  // Filler entries so the streak/heatmap has a real run of consecutive days.
-  // Combined with today/-1/-3 above this yields an unbroken 0..-6 streak, then a gap.
-  // Each carries distinct, believable content so the history doesn't read as spam.
-  const fillerContent: {
-    offset: number;
-    mood: string;
-    yesterday: string;
-    today: string;
-    tomorrow: string;
-    rawContent: string;
-  }[] = [
-    {
-      offset: -2, mood: "focused",
-      yesterday: "Wrapped the calendar refactor and cleared the review queue.",
-      today: "Keep today lighter — one deep task, then a walk.",
-      tomorrow: "Draft the weekly digest copy.",
-      rawContent: "Solid day. Shipped the calendar edits and stepped away before I got tired.",
-    },
-    {
-      offset: -4, mood: "tired",
-      yesterday: "Long call with the team — lots of ideas, no decisions.",
-      today: "Trim the scope and pick the one thing that matters.",
-      tomorrow: "Prototype the mood filter.",
-      rawContent: "Felt scattered today. Too many tabs open, literally and mentally.",
-    },
-    {
-      offset: -5, mood: "calm",
-      yesterday: "Read for an hour instead of scrolling — small win.",
-      today: "Carry that calm into the afternoon block.",
-      tomorrow: "Call Mom back.",
-      rawContent: "Quiet morning. The reading habit is starting to stick.",
-    },
-    {
-      offset: -6, mood: "bright",
-      yesterday: "Fixed the reminders bug that had been nagging me for days.",
-      today: "Celebrate a little, then start the next thing fresh.",
-      tomorrow: "Sketch the goals dashboard.",
-      rawContent: "Relief — that bug is finally gone and the tests are green.",
-    },
-    {
-      offset: -9, mood: "steady",
-      yesterday: "Rest day. Didn't touch the laptop and don't regret it.",
-      today: "Ease back in gently — inbox, then one task.",
-      tomorrow: "Plan the week properly this time.",
-      rawContent: "Needed the break. Back today with a clearer head.",
-    },
-    {
-      offset: -10, mood: "focused",
-      yesterday: "Mapped out the next two weeks on paper.",
-      today: "Follow the plan I made — resist the urge to replan.",
-      tomorrow: "Ship something small and visible.",
-      rawContent: "Planning day. Feels good to see the whole shape of it.",
-    },
-  ];
-  const fillerEntries: JournalEntry[] = fillerContent.map((c) => ({
-    id: `demo-entry-filler-${Math.abs(c.offset)}`,
-    date: makeEntryDate(c.offset),
-    rawContent: c.rawContent,
-    yesterday: c.yesterday,
-    today: c.today,
-    tomorrow: c.tomorrow,
-    mood: c.mood,
-    createdAt: now,
-    updatedAt: now,
-    tasks: [],
-    reminders: [],
-  }));
-
-  const gymGoal: Goal = {
-    id: "demo-goal-gym",
-    title: "Go to the gym",
-    unit: "days",
-    target: 7,
-    current: 3,
-    period: "week",
-    startDate: makeEntryDate(-2),
-    completed: false,
-    source: "journal",
-    createdAt: now,
-    updatedAt: now,
-  };
-
-  const readGoal: Goal = {
-    id: "demo-goal-read",
-    title: "Read",
-    unit: "pages",
-    target: 100,
-    current: 40,
-    period: "month",
-    startDate: makeEntryDate(-5),
-    completed: false,
-    source: "manual",
-    createdAt: now,
-    updatedAt: now,
-  };
-
-  // Extra goals whose whole point is to show each is counted in its *own* unit + period:
-  // days · pages · sessions · km · hours, across week / month / ongoing.
-  const meditateGoal: Goal = {
-    id: "demo-goal-meditate",
-    title: "Meditate",
-    unit: "sessions",
-    target: 5,
-    current: 2,
-    period: "week",
-    startDate: makeEntryDate(-1),
-    completed: false,
-    source: "journal",
-    createdAt: now,
-    updatedAt: now,
-  };
-
-  const runGoal: Goal = {
-    id: "demo-goal-run",
-    title: "Run",
-    unit: "km",
-    target: 30,
-    current: 12,
-    period: "month",
-    startDate: makeEntryDate(-6),
-    completed: false,
-    source: "manual",
-    createdAt: now,
-    updatedAt: now,
-  };
-
-  const guitarGoal: Goal = {
-    id: "demo-goal-guitar",
-    title: "Practice guitar",
-    unit: "hours",
-    target: 40,
-    current: 9,
-    period: "ongoing",
-    startDate: makeEntryDate(-10),
-    completed: false,
-    source: "manual",
-    createdAt: now,
-    updatedAt: now,
-  };
-
+  // Clean start: brand-new signed-out visitors begin with an empty app. They see the
+  // friendly empty states, and their first recorded entry is genuinely theirs — persisted
+  // on sign-in via the pending-entry migration, not seeded as fake sample content.
   return {
-    tasks: [
-      cloneTask(journalTask),
-      cloneTask(manualTask),
-      cloneTask(tomorrowTask),
-      cloneTask(doneTask),
-    ],
-    reminders: [cloneReminder(reminderToday), cloneReminder(reminderTomorrow)],
-    entries: [todayEntry, yesterdayEntry, olderEntry, ...fillerEntries],
-    goals: [
-      cloneGoal(gymGoal),
-      cloneGoal(readGoal),
-      cloneGoal(meditateGoal),
-      cloneGoal(runGoal),
-      cloneGoal(guitarGoal),
-    ],
+    tasks: [],
+    reminders: [],
+    entries: [],
+    goals: [],
     preferences: { ...DEFAULT_PREFERENCES },
     seedVersion: DEMO_SEED_VERSION,
     seedDay: todayKey(),
@@ -357,58 +80,81 @@ function isDemoState(value: unknown): value is DemoState {
   return Array.isArray(state.tasks) && Array.isArray(state.reminders) && Array.isArray(state.entries);
 }
 
-export function loadDemoState(): DemoState {
-  if (typeof window === "undefined") {
-    return createDemoState();
-  }
+function normalizeState(parsed: DemoState): DemoState {
+  return {
+    tasks: parsed.tasks.map(cloneTask),
+    reminders: parsed.reminders.map(cloneReminder),
+    entries: parsed.entries.map(cloneEntry),
+    // Backfill goals for blobs saved before this slice existed.
+    goals: (parsed.goals ?? []).map(cloneGoal),
+    // Backfill preferences for blobs saved before this slice existed.
+    preferences: { ...DEFAULT_PREFERENCES, ...(parsed.preferences ?? {}) },
+    seedVersion: DEMO_SEED_VERSION,
+    seedDay: parsed.seedDay ?? todayKey(),
+  };
+}
+
+// ─── Key-generic persistence core ─────────────────────────────────────────────
+// `reseed` = true for the ephemeral demo store (wipe on day/version rollover), false for the
+// persistent local vault (real data must survive midnight & version bumps).
+export function loadStateFromKey(key: string, reseed: boolean): DemoState {
+  if (typeof window === "undefined") return createDemoState();
 
   try {
-    const raw = window.localStorage.getItem(DEMO_STORAGE_KEY);
+    const raw = window.localStorage.getItem(key);
     if (!raw) {
       const seed = createDemoState();
-      window.localStorage.setItem(DEMO_STORAGE_KEY, JSON.stringify(seed));
+      window.localStorage.setItem(key, JSON.stringify(seed));
       return seed;
     }
 
     const parsed = JSON.parse(raw);
     if (!isDemoState(parsed)) {
       const seed = createDemoState();
-      window.localStorage.setItem(DEMO_STORAGE_KEY, JSON.stringify(seed));
+      window.localStorage.setItem(key, JSON.stringify(seed));
       return seed;
     }
 
-    // Reseed when the stored blob is from an older seed version or a previous day, so the demo
-    // never drifts/staleness-accumulates: every visitor sees the same pristine set anchored to
-    // today. Same-day edits (appendDemoJournalEntry) keep the anchor and survive until midnight.
-    if (parsed.seedVersion !== DEMO_SEED_VERSION || parsed.seedDay !== todayKey()) {
+    // Reseed only the demo store when its blob is from an older seed version or a previous day,
+    // so the try-mode demo never drifts. The vault is exempt: it holds real data.
+    if (reseed && (parsed.seedVersion !== DEMO_SEED_VERSION || parsed.seedDay !== todayKey())) {
       const seed = createDemoState();
-      window.localStorage.setItem(DEMO_STORAGE_KEY, JSON.stringify(seed));
+      window.localStorage.setItem(key, JSON.stringify(seed));
       return seed;
     }
 
-    return {
-      tasks: parsed.tasks.map(cloneTask),
-      reminders: parsed.reminders.map(cloneReminder),
-      entries: parsed.entries.map(cloneEntry),
-      // Backfill goals for blobs saved before this slice existed.
-      goals: (parsed.goals ?? []).map(cloneGoal),
-      // Backfill preferences for blobs saved before this slice existed.
-      preferences: { ...DEFAULT_PREFERENCES, ...(parsed.preferences ?? {}) },
-      seedVersion: DEMO_SEED_VERSION,
-      seedDay: parsed.seedDay,
-    };
+    return normalizeState(parsed);
   } catch {
     const seed = createDemoState();
-    window.localStorage.setItem(DEMO_STORAGE_KEY, JSON.stringify(seed));
+    try {
+      window.localStorage.setItem(key, JSON.stringify(seed));
+    } catch {}
     return seed;
   }
 }
 
-export function saveDemoState(state: DemoState): DemoState {
+export function saveStateToKey(key: string, state: DemoState): DemoState {
   if (typeof window !== "undefined") {
-    window.localStorage.setItem(DEMO_STORAGE_KEY, JSON.stringify(state));
+    window.localStorage.setItem(key, JSON.stringify(state));
   }
   return state;
+}
+
+export function updateStateAtKey(
+  key: string,
+  reseed: boolean,
+  updater: (state: DemoState) => DemoState
+): DemoState {
+  return saveStateToKey(key, updater(loadStateFromKey(key, reseed)));
+}
+
+// ─── Demo (signed-out try mode) public API — unchanged call sites ─────────────
+export function loadDemoState(): DemoState {
+  return loadStateFromKey(DEMO_STORAGE_KEY, true);
+}
+
+export function saveDemoState(state: DemoState): DemoState {
+  return saveStateToKey(DEMO_STORAGE_KEY, state);
 }
 
 export function resetDemoState(): DemoState {
@@ -416,8 +162,7 @@ export function resetDemoState(): DemoState {
 }
 
 export function updateDemoState(updater: (state: DemoState) => DemoState): DemoState {
-  const nextState = updater(loadDemoState());
-  return saveDemoState(nextState);
+  return updateStateAtKey(DEMO_STORAGE_KEY, true, updater);
 }
 
 function toJournalText(parsed: ParsedEntry, rawContent: string): string {
@@ -426,71 +171,208 @@ function toJournalText(parsed: ParsedEntry, rawContent: string): string {
     .join(" ");
 }
 
+// Pure reducer: return the next state with `parsed` appended as a new entry (+ its tasks/
+// reminders/goals). Shared by the demo store and the persistent vault. `isPrivate` marks the
+// entry device-only (used in sync mode to keep a single entry off the server).
+export function withAppendedEntry(
+  state: DemoState,
+  rawContent: string,
+  parsed: ParsedEntry,
+  isPrivate = false
+): DemoState {
+  const now = new Date().toISOString();
+  const entryId = makeId("demo-entry");
+  const nestedTasks: Task[] = parsed.tasks.map((task) => ({
+    id: makeId("demo-task"),
+    title: task.title,
+    description: task.description ?? null,
+    dueDate: task.dueDate ?? null,
+    completed: false,
+    progress: 0,
+    priority: task.priority,
+    source: "journal",
+    journalEntryId: entryId,
+    createdAt: now,
+    updatedAt: now,
+  }));
+  const nestedReminders: Reminder[] = parsed.reminders.map((reminder) => ({
+    id: makeId("demo-reminder"),
+    title: reminder.title,
+    description: reminder.description ?? null,
+    eventDate: reminder.eventDate,
+    reminded: false,
+    journalEntryId: entryId,
+    createdAt: now,
+  }));
+
+  // New goals surfaced by the entry (increment of existing goals isn't available in local
+  // mode, so only creation is supported here).
+  const newGoals: Goal[] = (parsed.goals ?? []).map((goal) => ({
+    id: makeId("demo-goal"),
+    title: goal.title,
+    unit: goal.unit || "times",
+    target: Math.max(1, Math.round(goal.target)),
+    current: 0,
+    period: goal.period ?? "week",
+    startDate: now,
+    completed: false,
+    source: "journal",
+    createdAt: now,
+    updatedAt: now,
+  }));
+
+  const entry: JournalEntry = {
+    id: entryId,
+    date: now,
+    rawContent: toJournalText(parsed, rawContent),
+    yesterday: parsed.yesterday ?? null,
+    today: parsed.today ?? null,
+    tomorrow: parsed.tomorrow ?? null,
+    mood: parsed.mood ?? null,
+    createdAt: now,
+    updatedAt: now,
+    tasks: nestedTasks.map(cloneTask),
+    reminders: nestedReminders.map(cloneReminder),
+    private: isPrivate,
+  };
+
+  return {
+    ...state,
+    tasks: [...nestedTasks, ...state.tasks],
+    reminders: [...nestedReminders, ...state.reminders],
+    entries: [entry, ...state.entries],
+    goals: [...newGoals, ...state.goals],
+  };
+}
+
 export function appendDemoJournalEntry(rawContent: string, parsed: ParsedEntry): DemoState {
-  return updateDemoState((state) => {
-    const now = new Date().toISOString();
-    const entryId = makeId("demo-entry");
-    const nestedTasks: Task[] = parsed.tasks.map((task) => ({
-      id: makeId("demo-task"),
-      title: task.title,
-      description: task.description ?? null,
-      dueDate: task.dueDate ?? null,
-      completed: false,
-      progress: 0,
-      priority: task.priority,
-      source: "journal",
-      journalEntryId: entryId,
-      createdAt: now,
-      updatedAt: now,
-    }));
-    const nestedReminders: Reminder[] = parsed.reminders.map((reminder) => ({
-      id: makeId("demo-reminder"),
-      title: reminder.title,
-      description: reminder.description ?? null,
-      eventDate: reminder.eventDate,
-      reminded: false,
-      journalEntryId: entryId,
-      createdAt: now,
-    }));
+  return updateDemoState((state) => withAppendedEntry(state, rawContent, parsed));
+}
 
-    // New goals surfaced by the entry (increment of existing demo goals isn't available
-    // server-side in try-mode, so only creation is supported here).
-    const newGoals: Goal[] = (parsed.goals ?? []).map((goal) => ({
-      id: makeId("demo-goal"),
-      title: goal.title,
-      unit: goal.unit || "times",
-      target: Math.max(1, Math.round(goal.target)),
-      current: 0,
-      period: goal.period ?? "week",
-      startDate: now,
-      completed: false,
-      source: "journal",
-      createdAt: now,
-      updatedAt: now,
-    }));
+// ─── Migration helpers (local ⇆ account) ──────────────────────────────────────
 
-    const entry: JournalEntry = {
-      id: entryId,
-      date: now,
-      rawContent: toJournalText(parsed, rawContent),
-      yesterday: parsed.yesterday ?? null,
-      today: parsed.today ?? null,
-      tomorrow: parsed.tomorrow ?? null,
-      mood: parsed.mood ?? null,
-      createdAt: now,
-      updatedAt: now,
-      tasks: nestedTasks.map(cloneTask),
-      reminders: nestedReminders.map(cloneReminder),
-    };
+export function demoStateIsEmpty(state: DemoState): boolean {
+  return (
+    state.entries.length === 0 &&
+    state.tasks.length === 0 &&
+    state.reminders.length === 0 &&
+    state.goals.length === 0
+  );
+}
 
-    return {
-      ...state,
-      tasks: [...nestedTasks, ...state.tasks],
-      reminders: [...nestedReminders, ...state.reminders],
-      entries: [entry, ...state.entries],
-      goals: [...newGoals, ...state.goals],
-    };
-  });
+interface ImportTaskDTO {
+  title: string;
+  description: string | null;
+  dueDate: string | null;
+  priority: "high" | "medium" | "low";
+}
+interface ImportReminderDTO {
+  title: string;
+  description: string | null;
+  eventDate: string;
+}
+export interface ImportPayload {
+  entries: Array<{
+    date: string;
+    rawContent: string;
+    yesterday: string | null;
+    today: string | null;
+    tomorrow: string | null;
+    mood: string | null;
+    tasks: ImportTaskDTO[];
+    reminders: ImportReminderDTO[];
+  }>;
+  tasks: ImportTaskDTO[];
+  reminders: ImportReminderDTO[];
+  goals: Array<{ title: string; unit: string; target: number; current: number; period: GoalPeriod }>;
+}
+
+// Flatten a local DemoState into the /api/user/import payload. Entries carry their own nested
+// journal-created tasks/reminders; the top-level tasks/reminders lists send only the *standalone*
+// (manually created) ones — those with no journalEntryId — so nothing is double-created.
+export function demoStateToImportPayload(state: DemoState): ImportPayload {
+  return {
+    entries: state.entries.map((e) => ({
+      date: e.date,
+      rawContent: e.rawContent || e.today || e.yesterday || e.tomorrow || "—",
+      yesterday: e.yesterday ?? null,
+      today: e.today ?? null,
+      tomorrow: e.tomorrow ?? null,
+      mood: e.mood ?? null,
+      tasks: (e.tasks ?? []).map((t) => ({
+        title: t.title,
+        description: t.description ?? null,
+        dueDate: t.dueDate ?? null,
+        priority: t.priority,
+      })),
+      reminders: (e.reminders ?? []).map((r) => ({
+        title: r.title,
+        description: r.description ?? null,
+        eventDate: r.eventDate,
+      })),
+    })),
+    tasks: state.tasks
+      .filter((t) => !t.journalEntryId)
+      .map((t) => ({
+        title: t.title,
+        description: t.description ?? null,
+        dueDate: t.dueDate ?? null,
+        priority: t.priority,
+      })),
+    reminders: state.reminders
+      .filter((r) => !r.journalEntryId)
+      .map((r) => ({ title: r.title, description: r.description ?? null, eventDate: r.eventDate })),
+    goals: state.goals.map((g) => ({
+      title: g.title,
+      unit: g.unit,
+      target: g.target,
+      current: g.current,
+      period: g.period,
+    })),
+  };
+}
+
+// Rebuild a DemoState from an /api/user/export payload (flat tables) — used when a user turns
+// cloud sync OFF and we download their account into the local vault. Tasks/reminders are
+// re-nested into their originating entries by journalEntryId for the journal-history view.
+export function exportToState(payload: {
+  entries?: JournalEntry[];
+  tasks?: Task[];
+  reminders?: Reminder[];
+  goals?: Goal[];
+}): DemoState {
+  const tasks = (payload.tasks ?? []).map(cloneTask);
+  const reminders = (payload.reminders ?? []).map(cloneReminder);
+  const tasksByEntry = new Map<string, Task[]>();
+  const remsByEntry = new Map<string, Reminder[]>();
+  for (const t of tasks) {
+    if (!t.journalEntryId) continue;
+    const list = tasksByEntry.get(t.journalEntryId) ?? [];
+    list.push(t);
+    tasksByEntry.set(t.journalEntryId, list);
+  }
+  for (const r of reminders) {
+    if (!r.journalEntryId) continue;
+    const list = remsByEntry.get(r.journalEntryId) ?? [];
+    list.push(r);
+    remsByEntry.set(r.journalEntryId, list);
+  }
+
+  const entries = (payload.entries ?? []).map((e) => ({
+    ...cloneEntry(e),
+    tasks: tasksByEntry.get(e.id) ?? [],
+    reminders: remsByEntry.get(e.id) ?? [],
+  }));
+
+  return {
+    tasks,
+    reminders,
+    entries,
+    goals: (payload.goals ?? []).map(cloneGoal),
+    preferences: { ...DEFAULT_PREFERENCES },
+    seedVersion: DEMO_SEED_VERSION,
+    seedDay: todayKey(),
+  };
 }
 
 // ─── Preferences (demo / unauthenticated) ─────────────────────────────────────

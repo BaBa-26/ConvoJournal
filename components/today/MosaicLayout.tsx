@@ -1,10 +1,10 @@
 "use client";
 
-import Link from "next/link";
 import { useTodayData } from "./useTodayData";
 import { useTodayHeader } from "./useTodayHeader";
 import { useWidgetLayout } from "./useWidgetLayout";
 import EditableWidgetStack from "./EditableWidgetStack";
+import { useSettingsUI } from "@/components/settings/SettingsUIProvider";
 import type { WidgetKey } from "@/types";
 import {
   AgendaList,
@@ -22,6 +22,7 @@ export default function MosaicLayout() {
   const { dateLabel, greetWord, firstName, reminderLabel, typeScaleStyle } = useTodayHeader();
   const { order, setOrder, editing, toggleEditing, commit, toggleHidden, hiddenWidgets } =
     useWidgetLayout();
+  const { openSettings } = useSettingsUI();
 
   const render: Record<WidgetKey, React.ReactNode> = {
     tonight: <TonightCTA reminderLabel={reminderLabel} />,
@@ -70,12 +71,12 @@ export default function MosaicLayout() {
           onToggleHidden={toggleHidden}
         />
 
-        <Link
-          href="/settings"
-          className="block mt-4 font-mono text-[10px] text-muted-foreground uppercase tracking-[0.18em] text-center hover:text-foreground transition-colors"
+        <button
+          onClick={() => openSettings()}
+          className="block w-full mt-4 font-mono text-[10px] text-muted-foreground uppercase tracking-[0.18em] text-center hover:text-foreground transition-colors"
         >
           profile &amp; settings →
-        </Link>
+        </button>
       </div>
     </div>
   );

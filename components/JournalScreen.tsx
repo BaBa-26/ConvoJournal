@@ -7,7 +7,8 @@ import Waveform from "./Waveform";
 import { useRecorder } from "@/hooks/useRecorder";
 import { buildAutocompleteEngine, type AutocompleteEngine } from "@/lib/autocomplete";
 import type { RecordingPhase, ParsedEntry, JournalEntry } from "@/types";
-import { appendDemoJournalEntry, loadDemoState } from "@/lib/demoData";
+import { loadLocal, appendLocalJournalEntry, loadPrivateVaultEntries } from "@/lib/localStore";
+import { useDataMode } from "@/components/PreferencesProvider";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -228,8 +229,21 @@ function EntriesListView({
                        hover:border-ink-600 transition-all duration-150 active:scale-[0.99] focus:outline-none"
           >
             <div className="flex items-center justify-between gap-2 mb-1.5">
-              <span className="font-mono text-[10px] text-parchment-700 uppercase tracking-wider">
+              <span className="flex items-center gap-1.5 font-mono text-[10px] text-parchment-700 uppercase tracking-wider">
                 {format(parseISO(e.date), "EEE, MMM d").toUpperCase()}
+                {e.private && (
+                  <span
+                    title="On this device only"
+                    className="inline-flex items-center gap-1 text-gold/70 normal-case tracking-normal"
+                  >
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none"
+                         stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <rect x="3" y="11" width="18" height="11" rx="2" />
+                      <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                    </svg>
+                    device only
+                  </span>
+                )}
               </span>
               {e.mood && (
                 <span className="font-mono text-[9px] text-gold/70 border border-gold/20 rounded-full px-2 py-0.5 flex-shrink-0">
@@ -443,20 +457,44 @@ function AnalyzingPhase({ transcript }: { transcript: string }) {
   );
 }
 
+// Build "Save your 3 tasks & 1 goal"-style copy from the analysis so the earned sign-in
+// gate references the user's actual result. Falls back to a generic label when empty.
+function saveGateLabel(parsed: ParsedEntry): string {
+  const parts: string[] = [];
+  const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
+  if (parsed.tasks?.length) parts.push(plural(parsed.tasks.length, "task"));
+  if (parsed.goals?.length) parts.push(plural(parsed.goals.length, "goal"));
+  if (parsed.reminders?.length) parts.push(plural(parsed.reminders.length, "reminder"));
+  if (!parts.length) return "Save your entry";
+  const joined =
+    parts.length === 1
+      ? parts[0]
+      : `${parts.slice(0, -1).join(", ")} & ${parts[parts.length - 1]}`;
+  return `Save your ${joined}`;
+}
+
 function ReviewPhase({
   transcript,
   parsed,
   onSave,
   onDiscard,
+  onSignIn,
   saving,
   requiresAuth,
+  showPrivateToggle,
+  keepPrivate,
+  onTogglePrivate,
 }: {
   transcript: string;
   parsed: ParsedEntry;
   onSave: () => void;
   onDiscard: () => void;
+  onSignIn: () => void;
   saving: boolean;
   requiresAuth: boolean;
+  showPrivateToggle: boolean;
+  keepPrivate: boolean;
+  onTogglePrivate: (v: boolean) => void;
 }) {
   const [showRaw, setShowRaw] = useState(false);
 
@@ -557,19 +595,60 @@ function ReviewPhase({
         </div>
       )}
 
+      {/* Keep-on-device toggle — only in sync mode, where there's a server to opt out of.
+          In local mode everything is already device-only, so the choice is redundant. */}
+      {showPrivateToggle && (
+        <button
+          type="button"
+          onClick={() => onTogglePrivate(!keepPrivate)}
+          aria-pressed={keepPrivate}
+          className={`flex items-center gap-3 w-full text-left px-4 py-3 rounded-xl border transition-all
+                      focus:outline-none ${
+                        keepPrivate
+                          ? "bg-gold/10 border-gold/40"
+                          : "bg-ink-900 border-ink-700 hover:border-ink-600"
+                      }`}
+        >
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none"
+               stroke={keepPrivate ? "#c8a878" : "#8a7a6a"} strokeWidth="1.6"
+               strokeLinecap="round" strokeLinejoin="round" className="flex-shrink-0">
+            <rect x="3" y="11" width="18" height="11" rx="2" />
+            <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+          </svg>
+          <span className="flex-1 min-w-0">
+            <span className={`block font-mono text-[11px] uppercase tracking-wide ${
+              keepPrivate ? "text-gold" : "text-parchment-400"
+            }`}>
+              Keep on this device only
+            </span>
+            <span className="block font-mono text-[9px] text-parchment-700 mt-0.5 leading-snug">
+              Won&apos;t sync to your account or other devices.
+            </span>
+          </span>
+          {/* Switch */}
+          <span className={`relative w-9 h-5 rounded-full flex-shrink-0 transition-colors ${
+            keepPrivate ? "bg-gold/60" : "bg-ink-600"
+          }`}>
+            <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-parchment-200 transition-all ${
+              keepPrivate ? "left-[18px]" : "left-0.5"
+            }`} />
+          </span>
+        </button>
+      )}
+
       {/* Action buttons */}
       <div className="action-bar">
         <button onClick={onDiscard} className="btn-ghost flex-1">
           Discard
         </button>
         {requiresAuth ? (
-          // Not signed in — prompt to sign in to save
+          // Not signed in — earned sign-in gate; stashes the entry, then sends to sign in
           <button
-            onClick={() => signIn()}
+            onClick={onSignIn}
             className="btn-primary flex-1 flex-col gap-0.5 py-2"
           >
-            <span className="text-xs leading-none">Sign in to save</span>
-            <span className="text-[9px] opacity-70 leading-none font-mono tracking-wide">your entry + tasks</span>
+            <span className="text-xs leading-none">{saveGateLabel(parsed)}</span>
+            <span className="text-[9px] opacity-70 leading-none font-mono tracking-wide">sign in — we&apos;ll keep it</span>
           </button>
         ) : (
           <button onClick={onSave} disabled={saving} className="btn-primary flex-1">
@@ -621,8 +700,18 @@ function EntryDetail({
       </button>
       <div className="flex-1 overflow-y-auto pb-4 space-y-4">
         <div>
-          <p className="font-mono text-[10px] text-parchment-700 uppercase tracking-widest mb-2">
+          <p className="flex items-center gap-2 font-mono text-[10px] text-parchment-700 uppercase tracking-widest mb-2">
             {format(parseISO(entry.date), "EEEE, MMMM d, yyyy")}
+            {entry.private && (
+              <span className="inline-flex items-center gap-1 text-gold/70 normal-case tracking-normal">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none"
+                     stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="3" y="11" width="18" height="11" rx="2" />
+                  <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                </svg>
+                device only
+              </span>
+            )}
           </p>
           {entry.mood && (
             <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full
@@ -703,6 +792,8 @@ function moodEmoji(mood: string): string {
 
 export default function JournalScreen() {
   const { data: session } = useSession();
+  const dataMode = useDataMode();
+  const remote = dataMode === "remote";
   const { state: recState, elapsed, transcript, error, startRecording, stopRecording, reset } =
     useRecorder();
 
@@ -712,6 +803,7 @@ export default function JournalScreen() {
   const [saving, setSaving]             = useState(false);
   const [saved, setSaved]               = useState(false);
   const [activeContent, setActiveContent] = useState("");
+  const [keepPrivate, setKeepPrivate]   = useState(false);
   const [entries, setEntries]           = useState<JournalEntry[]>([]);
   const [selectedEntry, setSelectedEntry] = useState<JournalEntry | null>(null);
   const [viewingEntries, setViewingEntries] = useState(false);
@@ -728,18 +820,27 @@ export default function JournalScreen() {
     [getEngine]
   );
 
-  // Fetch journal history — refresh after a new entry is saved
+  // Fetch journal history — refresh after a new entry is saved. Local mode (signed-out demo or
+  // signed-in vault) reads the on-device store; sync mode reads the account.
   useEffect(() => {
-    if (!session) {
-      setEntries(loadDemoState().entries);
+    if (!remote) {
+      setEntries(loadLocal().entries);
       return;
     }
 
     fetch("/api/journal")
       .then(r => r.json())
-      .then(data => { if (Array.isArray(data)) setEntries(data); })
+      .then(data => {
+        const remoteEntries = Array.isArray(data) ? data : [];
+        // Fold in device-only ("private") entries the user kept off the server, then sort by
+        // date desc so private + synced entries interleave chronologically in the history list.
+        const merged = [...remoteEntries, ...loadPrivateVaultEntries()].sort(
+          (a, b) => b.date.localeCompare(a.date)
+        );
+        setEntries(merged);
+      })
       .catch(() => {});
-  }, [saved, session]);
+  }, [saved, remote]);
 
   const runAnalysis = useCallback(async (text: string) => {
     setPhase("analyzing");
@@ -797,17 +898,20 @@ export default function JournalScreen() {
     if (!activeContent) return;
     setSaving(true);
     try {
-      if (!session) {
-        appendDemoJournalEntry(activeContent, parsed ?? { tasks: [], reminders: [] });
-        setEntries(loadDemoState().entries);
-        setSaved(true);
-        return;
+      if (remote && keepPrivate) {
+        // Sync mode, but the user chose to keep this one on-device only: write it to the vault
+        // (flagged private) instead of the account. It surfaces read-only in history + Today.
+        appendLocalJournalEntry(activeContent, parsed ?? { tasks: [], reminders: [] }, true);
+      } else if (remote) {
+        await fetch("/api/journal", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ rawContent: activeContent, analysis: parsed ?? { tasks: [], reminders: [] } }),
+        });
+      } else {
+        // On-device mode (signed-in vault): persist the entry + its tasks/reminders/goals locally.
+        appendLocalJournalEntry(activeContent, parsed ?? { tasks: [], reminders: [] });
       }
-      await fetch("/api/journal", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ rawContent: activeContent, analysis: parsed ?? { tasks: [], reminders: [] } }),
-      });
       // Train the local autocomplete model on every saved entry
       getEngine().train(activeContent);
       setSaved(true);
@@ -816,7 +920,26 @@ export default function JournalScreen() {
     } finally {
       setSaving(false);
     }
-  }, [activeContent, parsed, session]);
+  }, [activeContent, parsed, getEngine, remote, keepPrivate]);
+
+  // Unsigned user tapping the earned sign-in gate: stash the just-analyzed entry so it
+  // survives the OAuth round-trip, then send them to sign in. PendingEntryMigrator (mounted
+  // in the root layout) POSTs it to /api/journal the moment a session appears.
+  const handleSignInToSave = useCallback(() => {
+    try {
+      window.localStorage.setItem(
+        "progress:pendingEntry",
+        JSON.stringify({
+          raw: activeContent,
+          analysis: parsed ?? { tasks: [], reminders: [] },
+          date: new Date().toISOString(),
+        })
+      );
+    } catch {
+      // Non-fatal: if storage fails we still send them to sign in.
+    }
+    signIn(undefined, { callbackUrl: "/" });
+  }, [activeContent, parsed]);
 
   const handleDiscard = useCallback(() => {
     reset();
@@ -824,6 +947,7 @@ export default function JournalScreen() {
     setSaved(false);
     setPhase("idle");
     setActiveContent("");
+    setKeepPrivate(false);
     setSelectedEntry(null);
     setViewingEntries(false); // land back on the mic page after a new entry
   }, [reset]);
@@ -876,7 +1000,7 @@ export default function JournalScreen() {
           </p>
           {!session && (
             <p className="font-mono text-[9px] text-parchment-700/90 mt-1.5 tracking-wide">
-              Sample data · saved only on this device
+              Try it free · sign in to save your entry
             </p>
           )}
         </div>
@@ -930,8 +1054,12 @@ export default function JournalScreen() {
             parsed={parsed}
             onSave={handleSave}
             onDiscard={handleDiscard}
+            onSignIn={handleSignInToSave}
             saving={saving}
-            requiresAuth={false}
+            requiresAuth={!session}
+            showPrivateToggle={remote}
+            keepPrivate={keepPrivate}
+            onTogglePrivate={setKeepPrivate}
           />
         )}
       </div>

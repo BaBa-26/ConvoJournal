@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import { useSettingsUI } from "@/components/settings/SettingsUIProvider";
 import { useTodayData } from "./useTodayData";
 import { useTodayHeader } from "./useTodayHeader";
 import { useWidgetLayout } from "./useWidgetLayout";
@@ -22,6 +22,7 @@ export default function DaybreakLayout() {
   const data = useTodayData();
   const { dateLabel, greetWord, firstName, reminderLabel, typeScaleStyle } = useTodayHeader();
   const { prefs, patchPrefs } = usePreferences();
+  const { openSettings } = useSettingsUI();
   const { order, setOrder, editing, toggleEditing, commit, toggleHidden, hiddenWidgets } =
     useWidgetLayout();
 
@@ -91,12 +92,12 @@ export default function DaybreakLayout() {
           onToggleHidden={toggleHidden}
         />
 
-        <Link
-          href="/settings"
-          className="block mt-4 font-mono text-[10px] text-muted-foreground uppercase tracking-[0.18em] text-center hover:text-foreground transition-colors"
+        <button
+          onClick={() => openSettings()}
+          className="block w-full mt-4 font-mono text-[10px] text-muted-foreground uppercase tracking-[0.18em] text-center hover:text-foreground transition-colors"
         >
           profile &amp; settings →
-        </Link>
+        </button>
       </div>
     </div>
   );

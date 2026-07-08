@@ -6,7 +6,8 @@ import { useSession } from "next-auth/react";
 import { format, parseISO, isToday, startOfDay, differenceInCalendarDays } from "date-fns";
 import type { AgendaItem, WeekStats, StreakDay, JournalEntry, Task, Reminder, Goal, GoalPeriod } from "@/types";
 import { computeTaskStats } from "@/lib/taskStats";
-import { loadDemoState } from "@/lib/demoData";
+import { loadLocal } from "@/lib/localStore";
+import { useDataMode } from "@/components/PreferencesProvider";
 
 const PRIORITY_COLORS: Record<string, string> = {
   high: "#c87a6a",
@@ -221,14 +222,16 @@ const GOAL_PERIOD_LABEL: Record<GoalPeriod, string> = {
 // (session-aware, with a demo fallback) since Today's data hook doesn't carry them.
 // Taps through to the Goals screen for stepping/editing.
 export function GoalsTracker({ label = "Goals" }: { label?: string }) {
-  const { data: session, status } = useSession();
+  const { status } = useSession();
+  const dataMode = useDataMode();
   const [goals, setGoals] = useState<Goal[]>([]);
   const [loading, setLoading] = useState(true);
 
+  const remote = dataMode === "remote";
   const load = useCallback(async () => {
     if (status === "loading") return;
-    if (!session) {
-      setGoals(loadDemoState().goals);
+    if (!remote) {
+      setGoals(loadLocal().goals);
       setLoading(false);
       return;
     }
@@ -237,7 +240,7 @@ export function GoalsTracker({ label = "Goals" }: { label?: string }) {
       if (res.ok) setGoals(await res.json());
     } catch { /* leave empty on failure */ }
     setLoading(false);
-  }, [session, status]);
+  }, [remote, status]);
 
   useEffect(() => { load(); }, [load]);
 

@@ -5,49 +5,6 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 
-type JournalMode = "voice" | "text" | "both";
-
-const MODES: { value: JournalMode; label: string; sub: string; icon: React.ReactNode }[] = [
-  {
-    value: "voice",
-    label: "Voice first",
-    sub: "Speak your brain-dump and let Progress do the rest",
-    icon: (
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none"
-           stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-        <rect x="9" y="2" width="6" height="11" rx="3"/>
-        <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
-        <line x1="12" y1="19" x2="12" y2="23"/>
-        <line x1="8"  y1="23" x2="16" y2="23"/>
-      </svg>
-    ),
-  },
-  {
-    value: "text",
-    label: "Write it out",
-    sub: "Type your thoughts at your own pace",
-    icon: (
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none"
-           stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
-        <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
-      </svg>
-    ),
-  },
-  {
-    value: "both",
-    label: "Mix of both",
-    sub: "Voice when it's quick, type when you need precision",
-    icon: (
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none"
-           stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-        <circle cx="12" cy="12" r="10"/>
-        <path d="M12 8v4l3 3"/>
-      </svg>
-    ),
-  },
-];
-
 const slide = {
   initial:  { opacity: 0, x: 40 },
   animate:  { opacity: 1, x: 0  },
@@ -55,27 +12,39 @@ const slide = {
   transition: { duration: 0.25, ease: "easeOut" as const },
 };
 
+// Format an "HH:mm" value into a friendly label (e.g. "9:00 PM"). Empty → null.
+function formatTime(value: string): string | null {
+  if (!value) return null;
+  const [h, m] = value.split(":").map(Number);
+  if (Number.isNaN(h) || Number.isNaN(m)) return null;
+  const period = h < 12 ? "AM" : "PM";
+  const hour = h % 12 === 0 ? 12 : h % 12;
+  return `${hour}:${String(m).padStart(2, "0")} ${period}`;
+}
+
 export default function OnboardingPage() {
   const { data: session, update } = useSession();
   const router = useRouter();
 
-  const [step, setStep]                     = useState(0);
-  const [displayName, setDisplayName]       = useState(session?.user?.name ?? "");
-  const [journalMode, setJournalMode]       = useState<JournalMode | null>(null);
-  const [saving, setSaving]                 = useState(false);
-  const [error, setError]                   = useState<string | null>(null);
+  const [step, setStep]                 = useState(0);
+  const [displayName, setDisplayName]   = useState(session?.user?.name ?? "");
+  const [reminderTime, setReminderTime] = useState("");
+  const [saving, setSaving]             = useState(false);
+  const [error, setError]               = useState<string | null>(null);
 
   const totalSteps = 3;
 
   async function finish() {
-    if (!journalMode) return;
     setSaving(true);
     setError(null);
     try {
       const res = await fetch("/api/user/onboard", {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ displayName: displayName.trim() || session?.user?.name || "Friend", journalMode }),
+        body:    JSON.stringify({
+          displayName: displayName.trim() || session?.user?.name || "Friend",
+          reminderTime: reminderTime || null,
+        }),
       });
       if (!res.ok) throw new Error();
       // Refresh the NextAuth session so onboarded=true propagates
@@ -104,7 +73,7 @@ export default function OnboardingPage() {
       <div className="w-full max-w-sm">
         <AnimatePresence mode="wait">
 
-          {/* ── Step 0: Welcome ───────────────────────────── */}
+          {/* ── Step 0: Welcome + name ────────────────────── */}
           {step === 0 && (
             <motion.div key="step-0" {...slide} className="space-y-8">
               <div className="space-y-2">
@@ -115,7 +84,7 @@ export default function OnboardingPage() {
                   Good to have you.
                 </h1>
                 <p className="font-mono text-sm text-parchment-600 leading-6">
-                  This takes about 30 seconds. Let&apos;s get Progress set up the way you like it.
+                  This takes about 20 seconds. Let&apos;s get Progress set up the way you like it.
                 </p>
               </div>
 
@@ -144,54 +113,39 @@ export default function OnboardingPage() {
             </motion.div>
           )}
 
-          {/* ── Step 1: Journal style ─────────────────────── */}
+          {/* ── Step 1: Reminder time (skippable) ─────────── */}
           {step === 1 && (
             <motion.div key="step-1" {...slide} className="space-y-8">
               <div className="space-y-2">
                 <p className="font-mono text-[10px] uppercase tracking-[0.3em] text-gold/70">
-                  Your style
+                  Your rhythm
                 </p>
                 <h2 className="font-display italic text-3xl text-parchment-100 leading-snug">
-                  How do you like to reflect?
+                  When should we nudge you to reflect?
                 </h2>
                 <p className="font-mono text-sm text-parchment-600 leading-6">
-                  We&apos;ll tune the home screen to match. You can always switch mid-session.
+                  A gentle daily reminder to speak your day. Pick a time that fits — or skip and set it later.
                 </p>
               </div>
 
-              <div className="flex flex-col gap-3">
-                {MODES.map(({ value, label, sub, icon }) => (
-                  <button
-                    key={value}
-                    onClick={() => setJournalMode(value)}
-                    className={`flex items-start gap-4 text-left px-4 py-4 rounded-2xl border transition-all duration-150 active:scale-[0.98] focus:outline-none ${
-                      journalMode === value
-                        ? "border-gold/60 bg-gold/5 text-parchment-200"
-                        : "border-ink-700 bg-ink-900 text-parchment-500 hover:border-ink-600 hover:text-parchment-300"
-                    }`}
-                  >
-                    <span className={`mt-0.5 flex-shrink-0 ${journalMode === value ? "text-gold" : "text-parchment-700"}`}>
-                      {icon}
-                    </span>
-                    <div>
-                      <p className="font-mono text-sm font-medium">{label}</p>
-                      <p className="font-mono text-[11px] text-parchment-700 mt-0.5 leading-5">{sub}</p>
-                    </div>
-                    {journalMode === value && (
-                      <span className="ml-auto text-gold mt-0.5">✦</span>
-                    )}
-                  </button>
-                ))}
+              <div className="space-y-2">
+                <label className="label">Daily reminder</label>
+                <input
+                  type="time"
+                  className="input w-full"
+                  value={reminderTime}
+                  onChange={(e) => setReminderTime(e.target.value)}
+                  autoFocus
+                />
+                <p className="font-mono text-[10px] text-parchment-800">
+                  {reminderTime ? `We'll nudge you around ${formatTime(reminderTime)}` : "Optional — you can change or turn this off anytime"}
+                </p>
               </div>
 
               <div className="flex gap-3">
                 <button onClick={() => setStep(0)} className="btn-ghost flex-1">← Back</button>
-                <button
-                  onClick={() => journalMode && setStep(2)}
-                  disabled={!journalMode}
-                  className="btn-primary flex-1 disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  Continue →
+                <button onClick={() => setStep(2)} className="btn-primary flex-1">
+                  {reminderTime ? "Continue →" : "Skip →"}
                 </button>
               </div>
             </motion.div>
@@ -222,8 +176,8 @@ export default function OnboardingPage() {
                   <span className="text-parchment-300">{displayName.trim() || session?.user?.name}</span>
                 </div>
                 <div className="flex justify-between font-mono text-xs">
-                  <span className="text-parchment-700">Journaling style</span>
-                  <span className="text-parchment-300 capitalize">{journalMode}</span>
+                  <span className="text-parchment-700">Daily reminder</span>
+                  <span className="text-parchment-300">{formatTime(reminderTime) ?? "Off"}</span>
                 </div>
                 <div className="flex justify-between font-mono text-xs">
                   <span className="text-parchment-700">Account</span>

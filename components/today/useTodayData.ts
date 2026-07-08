@@ -5,7 +5,8 @@ import { useSession } from "next-auth/react";
 import { format, parseISO, isToday, isPast, subDays, startOfDay, differenceInCalendarDays } from "date-fns";
 import type { Task, Reminder, JournalEntry, AgendaItem, WeekStats, StreakDay } from "@/types";
 import { computeTaskStats } from "@/lib/taskStats";
-import { loadDemoState } from "@/lib/demoData";
+import { loadLocal, loadPrivateVaultEntries } from "@/lib/localStore";
+import { useDataMode } from "@/components/PreferencesProvider";
 
 const DAY_KEY = "yyyy-MM-dd";
 
@@ -35,21 +36,26 @@ function intensityLevel(entry: JournalEntry): 1 | 2 | 3 | 4 {
 }
 
 export function useTodayData(): TodayData {
-  const { data: session, status } = useSession();
+  const { status } = useSession();
+  const dataMode = useDataMode();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [reminders, setReminders] = useState<Reminder[]>([]);
   const [entries, setEntries] = useState<JournalEntry[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // Depend on stable identity facts, not the session object itself — next-auth mints a new
+  // session object on every window-focus refetch, which would re-run load() (3 fetches + a
+  // loading flicker) each time the user tabs back in.
+  const remote = dataMode === "remote";
   const load = useCallback(() => {
     if (status === "loading") return;
     setLoading(true);
 
-    if (!session) {
-      const demo = loadDemoState();
-      setTasks(demo.tasks);
-      setReminders(demo.reminders);
-      setEntries(demo.entries);
+    if (!remote) {
+      const local = loadLocal();
+      setTasks(local.tasks);
+      setReminders(local.reminders);
+      setEntries(local.entries);
       setLoading(false);
       return;
     }
@@ -61,10 +67,12 @@ export function useTodayData(): TodayData {
     ]).then(([t, r, e]) => {
       setTasks(Array.isArray(t) ? t : []);
       setReminders(Array.isArray(r) ? r : []);
-      setEntries(Array.isArray(e) ? e : []);
+      // Fold in device-only ("private") entries so streak/heatmap/recent count them too.
+      const remoteEntries = Array.isArray(e) ? e : [];
+      setEntries([...remoteEntries, ...loadPrivateVaultEntries()]);
       setLoading(false);
     });
-  }, [session, status]);
+  }, [remote, status]);
 
   useEffect(() => { load(); }, [load]);
 

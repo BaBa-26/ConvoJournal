@@ -5,6 +5,9 @@ import BottomNav from "@/components/BottomNav";
 import ProfileButton from "@/components/ProfileButton";
 import AuthProvider from "@/components/AuthProvider";
 import PreferencesProvider from "@/components/PreferencesProvider";
+import AppLockProvider from "@/components/AppLockProvider";
+import PendingEntryMigrator from "@/components/PendingEntryMigrator";
+import SettingsUIProvider from "@/components/settings/SettingsUIProvider";
 import ServiceWorkerRegister from "@/components/ServiceWorkerRegister";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 import "./globals.css";
@@ -61,18 +64,23 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en" className={`${playfair.variable} ${dmMono.variable}`}>
       <body className="min-h-screen bg-ink-950 overflow-x-hidden">
         <AuthProvider>
+          <PendingEntryMigrator />
           <PreferencesProvider>
-            <div className="md:flex md:h-screen md:overflow-hidden">
-              <SideNav />
+            <AppLockProvider>
+              <SettingsUIProvider>
+                <div className="md:flex md:h-screen md:overflow-hidden">
+                  <SideNav />
 
-              <div className="flex-1 flex flex-col md:overflow-y-auto">
-                <div className="max-w-[430px] md:max-w-2xl mx-auto w-full min-h-screen md:min-h-0 flex flex-col relative">
-                  {children}
+                  <div className="flex-1 flex flex-col md:overflow-y-auto">
+                    <div className="max-w-[430px] md:max-w-2xl mx-auto w-full min-h-screen md:min-h-0 flex flex-col relative">
+                      {children}
+                    </div>
+                  </div>
                 </div>
-              </div>
-            </div>
-            <ProfileButton />
-            <BottomNav />
+                <ProfileButton />
+                <BottomNav />
+              </SettingsUIProvider>
+            </AppLockProvider>
           </PreferencesProvider>
         </AuthProvider>
         <ServiceWorkerRegister />

@@ -3,7 +3,8 @@
 import { useState, useEffect, useCallback } from "react";
 import { useSession } from "next-auth/react";
 import type { Goal, GoalPeriod } from "@/types";
-import { loadDemoState, updateDemoState } from "@/lib/demoData";
+import { loadLocal, updateLocal } from "@/lib/localStore";
+import { useDataMode } from "@/components/PreferencesProvider";
 
 const PERIOD_LABEL: Record<GoalPeriod, string> = {
   week:    "this week",
@@ -190,7 +191,9 @@ function GoalForm({
 // ─── Section ──────────────────────────────────────────────────────────────────
 
 export default function GoalsSection() {
-  const { data: session, status } = useSession();
+  const { status } = useSession();
+  const dataMode = useDataMode();
+  const remote = dataMode === "remote";
   const [goals,   setGoals]   = useState<Goal[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
@@ -198,15 +201,15 @@ export default function GoalsSection() {
 
   const fetchGoals = useCallback(async () => {
     if (status === "loading") return;
-    if (!session) {
-      setGoals(loadDemoState().goals);
+    if (!remote) {
+      setGoals(loadLocal().goals);
       setLoading(false);
       return;
     }
     const res = await fetch("/api/goals");
     if (res.ok) setGoals(await res.json());
     setLoading(false);
-  }, [session, status]);
+  }, [remote, status]);
 
   useEffect(() => { fetchGoals(); }, [fetchGoals]);
 
@@ -221,8 +224,8 @@ export default function GoalsSection() {
   const handleStep = async (goal: Goal, delta: number) => {
     const next = applyLocal(goal, { current: goal.current + delta });
     setGoals((prev) => prev.map((g) => (g.id === goal.id ? next : g)));
-    if (!session) {
-      updateDemoState((state) => ({ ...state, goals: state.goals.map((g) => (g.id === goal.id ? next : g)) }));
+    if (!remote) {
+      updateLocal((state) => ({ ...state, goals: state.goals.map((g) => (g.id === goal.id ? next : g)) }));
       return;
     }
     const res = await fetch(`/api/goals/${goal.id}`, {
@@ -234,7 +237,7 @@ export default function GoalsSection() {
   };
 
   const handleCreate = async (draft: GoalDraft) => {
-    if (!session) {
+    if (!remote) {
       const now = new Date().toISOString();
       const goal: Goal = {
         id: `demo-goal-${Date.now()}`,
@@ -250,7 +253,7 @@ export default function GoalsSection() {
         updatedAt: now,
       };
       setGoals((prev) => [goal, ...prev]);
-      updateDemoState((state) => ({ ...state, goals: [goal, ...state.goals] }));
+      updateLocal((state) => ({ ...state, goals: [goal, ...state.goals] }));
       setShowAdd(false);
       return;
     }
@@ -268,8 +271,8 @@ export default function GoalsSection() {
     setGoals((prev) => prev.map((g) => (g.id === editing.id ? next : g)));
     const id = editing.id;
     setEditing(null);
-    if (!session) {
-      updateDemoState((state) => ({ ...state, goals: state.goals.map((g) => (g.id === id ? next : g)) }));
+    if (!remote) {
+      updateLocal((state) => ({ ...state, goals: state.goals.map((g) => (g.id === id ? next : g)) }));
       return;
     }
     const res = await fetch(`/api/goals/${id}`, {
@@ -282,8 +285,8 @@ export default function GoalsSection() {
 
   const handleDelete = async (id: string) => {
     setGoals((prev) => prev.filter((g) => g.id !== id));
-    if (!session) {
-      updateDemoState((state) => ({ ...state, goals: state.goals.filter((g) => g.id !== id) }));
+    if (!remote) {
+      updateLocal((state) => ({ ...state, goals: state.goals.filter((g) => g.id !== id) }));
       return;
     }
     await fetch(`/api/goals/${id}`, { method: "DELETE" });

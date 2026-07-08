@@ -6,7 +6,8 @@ import {
 } from "date-fns";
 import { useSession, signIn } from "next-auth/react";
 import type { Reminder } from "@/types";
-import { loadDemoState, updateDemoState } from "@/lib/demoData";
+import { loadLocal, updateLocal } from "@/lib/localStore";
+import { useDataMode } from "@/components/PreferencesProvider";
 import ItemEditModal, { type NewItem } from "@/components/ItemEditModal";
 
 // ─── Reminder card ────────────────────────────────────────────────────────────
@@ -155,6 +156,8 @@ function AddReminderForm({ onAdd, onCancel }: { onAdd: (r: Partial<Reminder>) =>
 
 export default function RemindersScreen() {
   const { data: session, status } = useSession();
+  const dataMode = useDataMode();
+  const remote = dataMode === "remote";
   const [reminders, setReminders]     = useState<Reminder[]>([]);
   const [loading, setLoading]         = useState(true);
   const [showAdd, setShowAdd]         = useState(false);
@@ -162,20 +165,20 @@ export default function RemindersScreen() {
 
   const fetchReminders = useCallback(async () => {
     if (status === "loading") return;
-    if (!session) {
-      setReminders(loadDemoState().reminders);
+    if (!remote) {
+      setReminders(loadLocal().reminders);
       setLoading(false);
       return;
     }
     const res = await fetch("/api/reminders");
     if (res.ok) setReminders(await res.json());
     setLoading(false);
-  }, [session, status]);
+  }, [remote, status]);
 
   useEffect(() => { fetchReminders(); }, [fetchReminders]);
 
   const handleAdd = async (data: Partial<Reminder>) => {
-    if (!session) {
+    if (!remote) {
       const reminder: Reminder = {
         id: `demo-reminder-${Date.now()}`,
         title: data.title ?? "Untitled reminder",
@@ -188,7 +191,7 @@ export default function RemindersScreen() {
       setReminders((prev) =>
         [...prev, reminder].sort((a, b) => new Date(a.eventDate).getTime() - new Date(b.eventDate).getTime())
       );
-      updateDemoState((state) => ({ ...state, reminders: [...state.reminders, reminder] }));
+      updateLocal((state) => ({ ...state, reminders: [...state.reminders, reminder] }));
       setShowAdd(false);
       return;
     }
@@ -217,9 +220,9 @@ export default function RemindersScreen() {
     });
     const resort = (list: Reminder[]) =>
       [...list].sort((a, b) => new Date(a.eventDate).getTime() - new Date(b.eventDate).getTime());
-    if (!session) {
+    if (!remote) {
       setReminders((prev) => resort(prev.map((r) => (r.id === editId ? apply(r) : r))));
-      updateDemoState((state) => ({
+      updateLocal((state) => ({
         ...state,
         reminders: state.reminders.map((r) => (r.id === editId ? apply(r) : r)),
       }));
@@ -238,9 +241,9 @@ export default function RemindersScreen() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!session) {
+    if (!remote) {
       setReminders((prev) => prev.filter((r) => r.id !== id));
-      updateDemoState((state) => ({ ...state, reminders: state.reminders.filter((r) => r.id !== id) }));
+      updateLocal((state) => ({ ...state, reminders: state.reminders.filter((r) => r.id !== id) }));
       return;
     }
     setReminders((prev) => prev.filter((r) => r.id !== id));
