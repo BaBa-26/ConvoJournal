@@ -35,6 +35,7 @@ export const GoalCreateSchema = z.object({
   unit:    z.string().min(1).max(30).default("times"),
   target:  z.number().int().min(1).max(100_000),
   current: z.number().int().min(0).max(100_000).optional(),
+  step:    z.number().int().min(1).max(100_000).optional(),
   period:  z.enum(["week", "month", "ongoing"]).default("week"),
 });
 
@@ -43,6 +44,7 @@ export const GoalUpdateSchema = z.object({
   unit:      z.string().min(1).max(30).optional(),
   target:    z.number().int().min(1).max(100_000).optional(),
   current:   z.number().int().min(0).max(100_000).optional(),
+  step:      z.number().int().min(1).max(100_000).optional(),
   period:    z.enum(["week", "month", "ongoing"]).optional(),
   completed: z.boolean().optional(),
 });

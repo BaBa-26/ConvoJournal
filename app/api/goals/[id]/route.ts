@@ -28,12 +28,15 @@ export async function PATCH(
       unit?: string;
       target?: number;
       current?: number;
+      step?: number;
       period?: "week" | "month" | "ongoing";
       completed?: boolean;
+      completedAt?: Date | null;
     } = {};
 
     if (parsed.data.title  !== undefined) data.title  = parsed.data.title;
     if (parsed.data.unit   !== undefined) data.unit   = parsed.data.unit;
+    if (parsed.data.step   !== undefined) data.step   = parsed.data.step;
     if (parsed.data.period !== undefined) data.period = parsed.data.period;
 
     // Resolve the final target/current so `completed` stays in sync and current never exceeds target.
@@ -50,7 +53,28 @@ export async function PATCH(
       data.completed = current >= target;
     }
 
+    // Stamp `completedAt` on a completion transition + record a durable `Completion`
+    // (survives the 24h cleanup so the weekly momentum bar keeps crediting the win).
+    const willComplete = data.completed !== undefined ? data.completed : goal.completed;
+    const transitioned = willComplete !== goal.completed;
+    if (transitioned) data.completedAt = willComplete ? new Date() : null;
+
     const updated = await prisma.goal.update({ where: { id: params.id }, data });
+
+    if (transitioned) {
+      if (willComplete) {
+        await prisma.completion.create({
+          data: { kind: "goal", title: updated.title, completedAt: updated.completedAt ?? new Date(), userId: auth.userId },
+        });
+      } else {
+        const latest = await prisma.completion.findFirst({
+          where: { userId: auth.userId, kind: "goal", title: updated.title },
+          orderBy: { completedAt: "desc" },
+        });
+        if (latest) await prisma.completion.delete({ where: { id: latest.id } });
+      }
+    }
+
     return NextResponse.json(updated);
   } catch (error) {
     if (process.env.NODE_ENV !== "production") console.error("[goals PATCH]", error);

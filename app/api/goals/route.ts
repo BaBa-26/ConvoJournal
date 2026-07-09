@@ -28,7 +28,7 @@ export async function POST(req: NextRequest) {
     const parsed = validate(GoalCreateSchema, body);
     if (!parsed.ok) return NextResponse.json(parsed.error, { status: 400 });
 
-    const { title, unit, target, current, period } = parsed.data;
+    const { title, unit, target, current, step, period } = parsed.data;
     const cur = Math.min(current ?? 0, target);
 
     const goal = await prisma.goal.create({
@@ -37,8 +37,10 @@ export async function POST(req: NextRequest) {
         unit,
         target,
         current:   cur,
+        step:      step ?? 1,
         period,
         completed: cur >= target,
+        completedAt: cur >= target ? new Date() : null,
         source:    "manual",
         userId:    auth.userId,
       },

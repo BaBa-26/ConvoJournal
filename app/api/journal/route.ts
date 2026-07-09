@@ -124,10 +124,18 @@ export async function POST(req: NextRequest) {
         const goal = await prisma.goal.findFirst({ where: { id: gu.goalId, userId: auth.userId } });
         if (!goal) continue;
         const next = Math.min(goal.target, goal.current + Math.max(1, Math.round(gu.increment)));
+        const nowComplete = next >= goal.target;
+        const justCompleted = nowComplete && !goal.completed;
         await prisma.goal.update({
           where: { id: goal.id },
-          data:  { current: next, completed: next >= goal.target },
+          data:  { current: next, completed: nowComplete, ...(justCompleted ? { completedAt: new Date() } : {}) },
         });
+        // Record the durable win so the momentum bar credits journal-driven completions too.
+        if (justCompleted) {
+          await prisma.completion.create({
+            data: { kind: "goal", title: goal.title, userId: auth.userId },
+          });
+        }
       }
     }
 

@@ -6,6 +6,7 @@ export interface Task {
   description?: string | null;
   dueDate?: string | null; // ISO string
   completed: boolean;      // API field name
+  completedAt?: string | null; // ISO string — set when completed flips true
   progress: number;        // 0–100; reaches 100 when completed
   priority: "high" | "medium" | "low";
   source: string;
@@ -32,12 +33,28 @@ export interface Goal {
   unit: string;         // counting unit: "days" | "sessions" | "times" | "pages" | …
   target: number;       // e.g. 7
   current: number;      // progress toward target
+  step: number;         // per-goal default increment the ± buttons apply
   period: GoalPeriod;
   startDate: string;    // ISO string
   completed: boolean;
+  completedAt?: string | null; // ISO string — set when completed flips true
   source: string;       // "manual" | "journal"
   createdAt: string;
   updatedAt: string;
+}
+
+// A durable record of a finished task/goal — survives the 24h auto-cleanup of the heavy row
+// so the weekly momentum bar can still credit cleared wins.
+export interface Completion {
+  id: string;
+  kind: "task" | "goal";
+  title: string;
+  completedAt: string; // ISO string
+}
+
+// Response of GET /api/completions — powers the weekly momentum bar.
+export interface CompletionsSummary {
+  completedThisWeek: number; // tasks + goals completed since the start of the current week
 }
 
 export interface JournalEntry {

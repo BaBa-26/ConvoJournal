@@ -25,6 +25,7 @@ export async function PATCH(
 
     const data: {
       completed?: boolean;
+      completedAt?: Date | null;
       progress?: number;
       title?: string;
       description?: string | null;
@@ -56,10 +57,29 @@ export async function PATCH(
       }
     }
 
-    const updated = await prisma.task.update({
-      where: { id: params.id },
-      data,
-    });
+    // Detect a completion transition so we can stamp `completedAt` (drives 24h cleanup)
+    // and record a durable `Completion` (survives the cleanup so momentum keeps the win).
+    const willComplete = data.completed !== undefined ? data.completed : task.completed;
+    const transitioned = willComplete !== task.completed;
+    if (transitioned) data.completedAt = willComplete ? new Date() : null;
+
+    const updated = await prisma.task.update({ where: { id: params.id }, data });
+
+    if (transitioned) {
+      if (willComplete) {
+        await prisma.completion.create({
+          data: { kind: "task", title: updated.title, completedAt: updated.completedAt ?? new Date(), userId: auth.userId },
+        });
+      } else {
+        // Toggled back to incomplete — drop the most recent matching completion so counts don't inflate.
+        const latest = await prisma.completion.findFirst({
+          where: { userId: auth.userId, kind: "task", title: updated.title },
+          orderBy: { completedAt: "desc" },
+        });
+        if (latest) await prisma.completion.delete({ where: { id: latest.id } });
+      }
+    }
+
     return NextResponse.json(updated);
   } catch (error) {
     if (process.env.NODE_ENV !== "production") console.error("[tasks PATCH]", error);

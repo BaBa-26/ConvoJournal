@@ -93,11 +93,26 @@ async function run() {
     await prisma.user.update({ where: { id: u.id }, data: { lastGoalNudge: now } });
   }
 
+  // ── 3. Cleanup: clear completed tasks/goals ~24h after completion ──────────
+  // The heavy row is deleted (saves space, keeps metrics to recent activity), but the
+  // durable Completion record it wrote stays, so the weekly momentum bar still credits it.
+  // Old Completions are pruned past 60 days (only recent windows feed the bar).
+  const cleanupCutoff = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+  const completionCutoff = new Date(now.getTime() - 60 * 24 * 60 * 60 * 1000);
+  const [tasksCleared, goalsCleared, completionsPruned] = await Promise.all([
+    prisma.task.deleteMany({ where: { completed: true, completedAt: { lt: cleanupCutoff } } }),
+    prisma.goal.deleteMany({ where: { completed: true, completedAt: { lt: cleanupCutoff } } }),
+    prisma.completion.deleteMany({ where: { completedAt: { lt: completionCutoff } } }),
+  ]);
+
   return {
     reminderPushes,
     goalPushes,
     checkedReminders: dueReminders.length,
     checkedUsers: users.length,
+    tasksCleared: tasksCleared.count,
+    goalsCleared: goalsCleared.count,
+    completionsPruned: completionsPruned.count,
   };
 }
 

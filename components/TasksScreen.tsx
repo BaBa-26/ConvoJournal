@@ -275,8 +275,11 @@ export default function TasksScreen() {
   useEffect(() => { fetchTasks(); }, [fetchTasks]);
 
   const handleToggle = async (id: string, completed: boolean) => {
-    // Completing a task snaps progress to 100 (mirrors the API sync rule).
-    const patch = (t: Task): Task => ({ ...t, completed, progress: completed ? 100 : t.progress });
+    // Completing a task snaps progress to 100 + stamps completedAt (mirrors the API sync rule).
+    const patch = (t: Task): Task => ({
+      ...t, completed, progress: completed ? 100 : t.progress,
+      completedAt: completed ? new Date().toISOString() : null,
+    });
     if (!remote) {
       setTasks((prev) => prev.map((t) => (t.id === id ? patch(t) : t)));
       updateLocal((state) => ({
@@ -298,7 +301,7 @@ export default function TasksScreen() {
 
   const handleProgressCommit = async (id: string, progress: number) => {
     const completed = progress >= 100;
-    const patch = (t: Task): Task => ({ ...t, progress, completed });
+    const patch = (t: Task): Task => ({ ...t, progress, completed, completedAt: completed ? new Date().toISOString() : t.completedAt ?? null });
     if (!remote) {
       setTasks((prev) => prev.map((t) => (t.id === id ? patch(t) : t)));
       updateLocal((state) => ({
@@ -546,6 +549,15 @@ export default function TasksScreen() {
                 ))}
               </div>
             </div>
+
+            {/* Auto-cleanup notice — shown when completed tasks are on screen */}
+            {!loading && filtered.some((t) => t.completed) && (
+              <p className="font-mono text-[10px] leading-relaxed text-parchment-700 bg-ink-900/60
+                            border border-ink-700/60 rounded-lg px-3 py-2 tracking-wide">
+                Completed tasks clear about 24h after you finish them — the win still counts, we just
+                keep this list from piling up.
+              </p>
+            )}
 
             {/* List */}
             {loading ? (

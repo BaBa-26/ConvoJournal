@@ -75,6 +75,7 @@ model User {
   tasks          Task[]
   reminders      Reminder[]
   goals          Goal[]
+  completions    Completion[]
   pushSubscriptions PushSubscription[]
 }
 
@@ -122,6 +123,7 @@ model Task {
   description    String?
   dueDate        DateTime?
   completed      Boolean       @default(false)
+  completedAt    DateTime?     // when `completed` last flipped true — drives the 24h auto-cleanup (updatedAt is unreliable: any edit bumps it)
   progress       Int           @default(0)   // 0–100; reaches 100 when completed
   priority       String        @default("medium")
   source         String        @default("journal")
@@ -142,14 +144,31 @@ model Goal {
   unit      String   @default("times") // free-form counting unit: "days" | "sessions" | "times" | "pages" | …
   target    Int      // e.g. 7 (gym every day this week)
   current   Int      @default(0) // progress toward target; may be edited manually or by journal extraction
+  step      Int      @default(1) // per-goal default increment the ± buttons apply (e.g. +10 for a reading goal)
   period    String   @default("week") // "week" | "month" | "ongoing"
   startDate DateTime @default(now())
   completed Boolean  @default(false)
+  completedAt DateTime? // when `completed` last flipped true — drives the 24h auto-cleanup
   source    String   @default("manual") // "manual" | "journal"
   userId    String
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+}
+
+// A tiny, durable record of a finished task/goal. Written when an item completes and
+// kept after the heavy Task/Goal row is auto-deleted (24h post-completion), so the
+// weekly "momentum" bar can still credit wins the user already cleared. Pruned by the
+// cleanup cron after ~60 days (only recent windows feed the bar).
+model Completion {
+  id          String   @id @default(cuid())
+  kind        String   // "task" | "goal"
+  title       String
+  completedAt DateTime @default(now())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, completedAt])
 }
 
 model Reminder {

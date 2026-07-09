@@ -2,9 +2,19 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useSession } from "next-auth/react";
+import { startOfWeek } from "date-fns";
 import type { Goal, GoalPeriod } from "@/types";
 import { loadLocal, updateLocal } from "@/lib/localStore";
 import { useDataMode } from "@/components/PreferencesProvider";
+
+// Goals completed since the start of this week — from live goals in demo mode, or the
+// durable Completion log (remote). Feeds the momentum bar so cleared wins still count.
+function goalsDoneThisWeek(goals: Goal[]): number {
+  const weekStart = startOfWeek(new Date()).getTime();
+  return goals.filter(
+    (g) => (g.completed || g.current >= g.target) && g.completedAt && new Date(g.completedAt).getTime() >= weekStart
+  ).length;
+}
 
 const PERIOD_LABEL: Record<GoalPeriod, string> = {
   week:    "this week",
@@ -24,6 +34,9 @@ function GoalCard({
 }) {
   const pct = goal.target > 0 ? Math.min(100, Math.round((goal.current / goal.target) * 100)) : 0;
   const done = goal.completed || goal.current >= goal.target;
+  // The ± buttons apply this amount; it seeds from the goal's custom step but is editable
+  // inline for a quick "log N at once" (e.g. read 30 pages) without 30 taps.
+  const [amount, setAmount] = useState(Math.max(1, goal.step || 1));
 
   return (
     <div className={`rounded-xl border p-3.5 space-y-2.5 transition-all
@@ -71,16 +84,16 @@ function GoalCard({
         />
       </div>
 
-      {/* Steppers */}
+      {/* Steppers — ± apply the editable amount (defaults to the goal's step) */}
       <div className="flex items-center justify-between pt-0.5">
         <span className="font-mono text-[9px] uppercase tracking-widest text-parchment-800">
           {done ? "complete" : `${pct}%`}
         </span>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5">
           <button
-            onClick={() => onStep(goal, -1)}
+            onClick={() => onStep(goal, -amount)}
             disabled={goal.current <= 0}
-            aria-label="Decrease progress"
+            aria-label={`Subtract ${amount} ${goal.unit}`}
             className="w-8 h-8 rounded-lg border border-ink-700 text-parchment-500
                        hover:border-parchment-700/60 hover:text-parchment-300 transition-all
                        disabled:opacity-30 disabled:cursor-not-allowed focus:outline-none
@@ -88,10 +101,20 @@ function GoalCard({
           >
             −
           </button>
+          <input
+            type="number"
+            min={1}
+            value={amount}
+            onChange={(e) => setAmount(Math.max(1, Math.min(100_000, parseInt(e.target.value, 10) || 1)))}
+            aria-label="Amount to log"
+            className="w-12 h-8 text-center bg-ink-800 border border-ink-700 rounded-lg
+                       font-mono text-xs text-parchment-300 focus:outline-none focus:border-accent/50
+                       [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none"
+          />
           <button
-            onClick={() => onStep(goal, 1)}
+            onClick={() => onStep(goal, amount)}
             disabled={goal.current >= goal.target}
-            aria-label="Increase progress"
+            aria-label={`Add ${amount} ${goal.unit}`}
             className="w-8 h-8 rounded-lg border border-accent/40 text-accent
                        hover:bg-accent/10 transition-all
                        disabled:opacity-30 disabled:cursor-not-allowed focus:outline-none
@@ -101,6 +124,12 @@ function GoalCard({
           </button>
         </div>
       </div>
+
+      {done && (
+        <p className="font-mono text-[9px] text-parchment-800 tracking-wide pt-0.5">
+          clears in 24h — the win still counts, we just tidy it out of the way.
+        </p>
+      )}
     </div>
   );
 }
@@ -111,6 +140,7 @@ interface GoalDraft {
   title: string;
   target: number;
   unit: string;
+  step: number;
   period: GoalPeriod;
   current?: number;
 }
@@ -125,12 +155,14 @@ function GoalForm({
   const [title,  setTitle]  = useState(initial?.title ?? "");
   const [target, setTarget] = useState(String(initial?.target ?? 7));
   const [unit,   setUnit]   = useState(initial?.unit ?? "days");
+  const [step,   setStep]   = useState(String(initial?.step ?? 1));
   const [period, setPeriod] = useState<GoalPeriod>(initial?.period ?? "week");
 
   const handleSubmit = () => {
     const t = parseInt(target, 10);
     if (!title.trim() || isNaN(t) || t < 1) return;
-    onSubmit({ title: title.trim(), target: t, unit: unit.trim() || "times", period, current: initial?.current });
+    const s = Math.max(1, parseInt(step, 10) || 1);
+    onSubmit({ title: title.trim(), target: t, unit: unit.trim() || "times", step: s, period, current: initial?.current });
   };
 
   return (
@@ -162,6 +194,27 @@ function GoalForm({
           onChange={(e) => setUnit(e.target.value)}
           aria-label="Unit"
         />
+      </div>
+
+      <div>
+        <div className="flex items-center gap-2">
+          <label className="font-mono text-[10px] uppercase tracking-wider text-parchment-700 whitespace-nowrap">
+            step by
+          </label>
+          <input
+            type="number"
+            min={1}
+            className="input w-24"
+            placeholder="1"
+            value={step}
+            onChange={(e) => setStep(e.target.value)}
+            aria-label="Default step amount"
+          />
+          <span className="font-mono text-[10px] text-parchment-800">{unit.trim() || "times"} per tap</span>
+        </div>
+        <p className="font-mono text-[9px] text-parchment-800 mt-1 tracking-wide">
+          how much the + button adds by default (you can still log any amount)
+        </p>
       </div>
 
       <div className="relative">
@@ -198,16 +251,25 @@ export default function GoalsSection() {
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
   const [editing, setEditing] = useState<Goal | null>(null);
+  // Goals completed & cleared earlier this week — remote reads the durable Completion log
+  // (the heavy rows may already be gone); demo derives it from live goals.
+  const [clearedWins, setClearedWins] = useState(0);
 
   const fetchGoals = useCallback(async () => {
     if (status === "loading") return;
     if (!remote) {
       setGoals(loadLocal().goals);
+      setClearedWins(0); // demo goals aren't auto-cleared, so live goals already carry the credit
       setLoading(false);
       return;
     }
-    const res = await fetch("/api/goals");
-    if (res.ok) setGoals(await res.json());
+    const weekStart = startOfWeek(new Date()).toISOString();
+    const [gRes, cRes] = await Promise.all([
+      fetch("/api/goals"),
+      fetch(`/api/completions?kind=goal&since=${encodeURIComponent(weekStart)}`),
+    ]);
+    if (gRes.ok) setGoals(await gRes.json());
+    if (cRes.ok) setClearedWins((await cRes.json()).completedThisWeek ?? 0);
     setLoading(false);
   }, [remote, status]);
 
@@ -218,7 +280,12 @@ export default function GoalsSection() {
     const merged = { ...goal, ...patch };
     const target = merged.target;
     const current = Math.min(Math.max(merged.current, 0), target);
-    return { ...merged, current, completed: current >= target };
+    const completed = current >= target;
+    // Stamp completedAt on the transition (mirrors the server) so momentum credits the win.
+    const completedAt = completed
+      ? (goal.completed ? goal.completedAt ?? new Date().toISOString() : new Date().toISOString())
+      : null;
+    return { ...merged, current, completed, completedAt };
   };
 
   const handleStep = async (goal: Goal, delta: number) => {
@@ -245,9 +312,11 @@ export default function GoalsSection() {
         unit: draft.unit,
         target: draft.target,
         current: 0,
+        step: draft.step,
         period: draft.period,
         startDate: now,
         completed: false,
+        completedAt: null,
         source: "manual",
         createdAt: now,
         updatedAt: now,
@@ -260,14 +329,14 @@ export default function GoalsSection() {
     const res = await fetch("/api/goals", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title: draft.title, unit: draft.unit, target: draft.target, period: draft.period }),
+      body: JSON.stringify({ title: draft.title, unit: draft.unit, target: draft.target, step: draft.step, period: draft.period }),
     });
     if (res.ok) { const goal: Goal = await res.json(); setGoals((prev) => [goal, ...prev]); setShowAdd(false); }
   };
 
   const handleEditSave = async (draft: GoalDraft) => {
     if (!editing) return;
-    const next = applyLocal(editing, { title: draft.title, unit: draft.unit, target: draft.target, period: draft.period });
+    const next = applyLocal(editing, { title: draft.title, unit: draft.unit, target: draft.target, step: draft.step, period: draft.period });
     setGoals((prev) => prev.map((g) => (g.id === editing.id ? next : g)));
     const id = editing.id;
     setEditing(null);
@@ -278,7 +347,7 @@ export default function GoalsSection() {
     const res = await fetch(`/api/goals/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title: draft.title, unit: draft.unit, target: draft.target, period: draft.period }),
+      body: JSON.stringify({ title: draft.title, unit: draft.unit, target: draft.target, step: draft.step, period: draft.period }),
     });
     if (res.ok) { const updated: Goal = await res.json(); setGoals((prev) => prev.map((g) => (g.id === id ? updated : g))); }
   };
@@ -294,44 +363,65 @@ export default function GoalsSection() {
 
   if (loading) return null;
 
-  // Aggregate progress across all goals — the headline bar mirrors the Tasks tab overview.
-  const doneCount = goals.filter((g) => g.completed || g.current >= g.target).length;
-  const avgPct = goals.length === 0 ? 0 : Math.round(
-    goals.reduce((sum, g) => sum + (g.target > 0 ? Math.min(100, (g.current / g.target) * 100) : 0), 0) / goals.length
-  );
+  // ── Weekly momentum ────────────────────────────────────────────────────────
+  // The bar reflects THIS WEEK's momentum, not a cold average: progress on live goals
+  // PLUS goals already completed & cleared this week (each counts as a full pseudo-goal).
+  // So finishing a goal keeps the bar up all week instead of resetting it toward a
+  // demoralizing 0% once the row is auto-deleted.
+  const active = goals.filter((g) => !(g.completed || g.current >= g.target));
+  const wins = remote ? clearedWins : goalsDoneThisWeek(goals); // completions this week (cleared or still shown)
+  const activeCurrent = active.reduce((s, g) => s + Math.min(g.current, g.target), 0);
+  const activeTarget  = active.reduce((s, g) => s + g.target, 0);
+  const avgTarget = active.length
+    ? activeTarget / active.length
+    : (goals.length ? goals.reduce((s, g) => s + g.target, 0) / goals.length : 1);
+  const winCredit = wins * avgTarget; // each completed win = one fully-filled pseudo-goal
+  const denom = activeTarget + winCredit;
+  const momentumPct = denom === 0 ? 0 : Math.round(Math.min(100, ((activeCurrent + winCredit) / denom) * 100));
+  const showOverview = goals.length > 0 || wins > 0;
+  const allClear = active.length === 0 && wins > 0; // finished everything this week
+
   const byPeriod: Record<GoalPeriod, number> = { week: 0, month: 0, ongoing: 0 };
-  for (const g of goals) byPeriod[g.period] = (byPeriod[g.period] ?? 0) + 1;
+  for (const g of active) byPeriod[g.period] = (byPeriod[g.period] ?? 0) + 1;
   const PERIOD_SHORT: Record<GoalPeriod, string> = { week: "weekly", month: "monthly", ongoing: "ongoing" };
 
   return (
     <div className="space-y-3">
-      {/* Overall goal progress overview */}
-      {goals.length > 0 && (
+      {/* Weekly momentum overview */}
+      {showOverview && (
         <div className="bg-ink-900 border border-ink-700 rounded-xl p-3.5 space-y-2.5">
           <div className="flex items-center justify-between">
             <span className="font-mono text-[10px] uppercase tracking-widest text-parchment-700">
-              {doneCount} of {goals.length} complete
+              {allClear
+                ? "all clear this week"
+                : `this week's momentum${wins > 0 ? ` · ${wins} done` : ""}`}
             </span>
-            <span className="font-display italic text-base text-accent leading-none">{avgPct}%</span>
+            <span className="font-display italic text-base text-accent leading-none">{momentumPct}%</span>
           </div>
           <div className="h-2 rounded-full bg-ink-800 overflow-hidden">
             <div
-              className="h-full rounded-full bg-accent transition-all duration-300"
-              style={{ width: `${avgPct}%` }}
+              className={`h-full rounded-full transition-all duration-300 ${allClear ? "bg-priority-low" : "bg-accent"}`}
+              style={{ width: `${momentumPct}%` }}
             />
           </div>
-          <div className="flex items-center gap-4 pt-0.5">
-            {(["week", "month", "ongoing"] as GoalPeriod[]).map((p) =>
-              byPeriod[p] > 0 ? (
-                <span key={p} className="flex items-center gap-1.5">
-                  <span className="w-1.5 h-1.5 rounded-full bg-parchment-700" />
-                  <span className="font-mono text-[9px] text-parchment-700">
-                    {byPeriod[p]} {PERIOD_SHORT[p]}
+          {allClear ? (
+            <p className="font-mono text-[9px] text-parchment-700 pt-0.5">
+              nicely done — {wins} {wins === 1 ? "goal" : "goals"} completed. add another whenever you’re ready.
+            </p>
+          ) : (
+            <div className="flex items-center gap-4 pt-0.5">
+              {(["week", "month", "ongoing"] as GoalPeriod[]).map((p) =>
+                byPeriod[p] > 0 ? (
+                  <span key={p} className="flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-parchment-700" />
+                    <span className="font-mono text-[9px] text-parchment-700">
+                      {byPeriod[p]} {PERIOD_SHORT[p]}
+                    </span>
                   </span>
-                </span>
-              ) : null
-            )}
-          </div>
+                ) : null
+              )}
+            </div>
+          )}
         </div>
       )}
 
