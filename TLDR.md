@@ -1,10 +1,28 @@
 # Progress (ConvoJournal) — Handoff Doc
 
-Last updated: 2026-07-07. **Read "🟢 Latest" directly below for current state.** Everything under "🎨 Dashboard Redesign" and "⚠️ Last Session" further down is now **shipped history** — kept for context, not active work.
+Last updated: 2026-07-09. **Read "🟢 Latest" directly below for current state.** Everything below it (starting "Latest (2026-07-07)") is now **shipped history** — kept for context, not active work.
 
 ---
 
-## 🟢 Latest (2026-07-07) — shipped & deployed
+## 🟢 Latest (2026-07-09) — shipped & deployed
+
+All committed on `claude/nifty-hamilton-ISukC`, pushed to origin, and deployed to prod (`progress-coral-eight.vercel.app`) via `npx vercel --prod --yes`. Typecheck clean, `npm run test:parser` 47/47, prod smoke test 200/401 as expected. Phase-1 schema was `db:push`'d to prod (additive: `Task.completedAt`, `Goal.completedAt`/`step`, new `Completion` model).
+
+- **AI crisis modes** (`lib/crisis.ts`) — two-layer detection (deterministic keyword tiers + Gemini STEP-5), soft-landing `CrisisSupportCard` above review, **zero-retention** (risk never persisted). `filterCrisisActionables` stops crisis phrasing becoming to-dos ("I want to die" ≠ a task "Die"). Broadened the deterministic dictionary + a hard-drop backstop for run-ons. Fixtures in `scripts/parser-check.ts`.
+- **Phase 1 — completed cleanup + weekly momentum + goal logging.** Completed tasks/goals auto-delete ~24h after completion (cron pass), but a tiny durable `Completion` row survives so wins still count. Goals screen's **momentum bar** = this-week live-goal progress + goals completed/cleared this week (`GET /api/completions`) → never a demoralizing 0%, "all clear" empty state. Goal cards got a per-goal `step` + an editable quick-log-N amount.
+- **Phase 2 — 3-way task↔reminder↔goal conversion.** `ItemEditModal` is now a unified editor with an unlocked type toggle; `lib/itemConvert.ts` creates the target row + deletes the source (remote + demo). Wired into Tasks, Schedule, and Goals (goal edit now uses the shared modal).
+- **Dev login fixed** — Credentials provider can't create DB sessions, so dev now uses **JWT sessions** (`NODE_ENV`-gated; prod stays database). No more "sign in bounces to /landing."
+- **First-run onboarding guaranteed** — enforced **server-side + DB-authoritative** in `app/page.tsx` (fires from any entry point; a stale JWT can't loop it). Onboarding self-heals + hard-navigates on completion.
+- **Guest journal hint** — signed-out idle screen suggests what to talk about (day / weekly-monthly goals / tasks / something to improve).
+
+### ⏳ Next steps
+1. **Phase 3 — notifications (next session).** VAPID + `CRON_SECRET` ARE set in prod, but a live cron run logs `[webpush] send failed 403` — the stored subscription was made against a public key that no longer pairs with the current private key. Fix: re-toggle the notifications slider to re-subscribe, then "Send test" (bypasses cron). Then **build per-item "notify me" toggles** (Task/Reminder/Goal `notify` fields + cron passes). iPhone needs Add-to-Home-Screen; Hobby cron is once/day → point cron-job.org at `/api/cron/notify?key=<CRON_SECRET>` for timely delivery.
+2. **Guest-hint copy** — currently a softened default; swap for Aarrav's exact phrasing if desired.
+3. Older backlog (still open): signed-out "one free try" funnel; Gemini Flash-Lite A/B.
+
+---
+
+## Latest (2026-07-07) — shipped history
 
 All committed on `claude/nifty-hamilton-ISukC` and deployed to prod (`progress-coral-eight.vercel.app`) via `npx vercel --prod --yes` (Git auto-deploy is broken since the repo rename — see below). Typecheck clean, routes verified 200.
 
