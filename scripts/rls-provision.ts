@@ -2,9 +2,9 @@
  * One-shot provisioner for the RLS test branch. NEVER run against prod.
  *
  * Given the branch OWNER connection string (env RLS_OWNER_URL), this:
- *   1. creates the least-privilege `app_user` role with a freshly generated password
+ *   1. creates the least-privilege `app_runtime` role with a freshly generated password
  *   2. applies prisma/rls.sql (grants + policies)
- *   3. writes RLS_OWNER_URL + RLS_APP_URL (app_user, pooled) into .env  (gitignored)
+ *   3. writes RLS_OWNER_URL + RLS_APP_URL (app_runtime, pooled) into .env  (gitignored)
  *
  * The generated password is written to disk only — it is never printed to stdout.
  *
@@ -29,7 +29,7 @@ const ownerDirect = OWNER.replace("-pooler.", ".");
 // URL-safe password (base64url = [A-Za-z0-9_-], no chars that need escaping in a URL).
 const password = randomBytes(24).toString("base64url");
 
-// Build the app_user pooled URL by swapping the credentials in the owner (pooled) URL.
+// Build the app_runtime pooled URL by swapping the credentials in the owner (pooled) URL.
 function withCreds(url: string, user: string, pass: string): string {
   const u = new URL(url);
   u.username = user;
@@ -37,23 +37,23 @@ function withCreds(url: string, user: string, pass: string): string {
   return u.toString();
 }
 const ownerPooled = OWNER.includes("-pooler.") ? OWNER : OWNER.replace(".", "-pooler.");
-const appPooled = withCreds(ownerPooled, "app_user", password);
+const appPooled = withCreds(ownerPooled, "app_runtime", password);
 
 const db = new PrismaClient({ datasourceUrl: ownerDirect });
 
 async function main() {
   // 1. Create or reset the role's password (idempotent).
   const exists = await db.$queryRawUnsafe<{ c: bigint }[]>(
-    `SELECT count(*)::int AS c FROM pg_roles WHERE rolname = 'app_user'`
+    `SELECT count(*)::int AS c FROM pg_roles WHERE rolname = 'app_runtime'`
   );
   const roleExists = Number(exists[0].c) > 0;
   // Password is generated locally from [A-Za-z0-9_-]; safe to inline (no quotes/injection).
   if (roleExists) {
-    await db.$executeRawUnsafe(`ALTER ROLE app_user WITH LOGIN PASSWORD '${password}'`);
-    console.log("app_user already existed — rotated its password.");
+    await db.$executeRawUnsafe(`ALTER ROLE app_runtime WITH LOGIN PASSWORD '${password}'`);
+    console.log("app_runtime already existed — rotated its password.");
   } else {
-    await db.$executeRawUnsafe(`CREATE ROLE app_user WITH LOGIN PASSWORD '${password}'`);
-    console.log("Created role app_user.");
+    await db.$executeRawUnsafe(`CREATE ROLE app_runtime WITH LOGIN PASSWORD '${password}'`);
+    console.log("Created role app_runtime.");
   }
 
   // 2. Apply prisma/rls.sql (grants + policies), statement by statement.

@@ -5,8 +5,8 @@ const globalForPrisma = globalThis as unknown as {
   prismaAdmin: PrismaClient | undefined;
 };
 
-// ─── Base client (least-privilege `app_user` role, DATABASE_URL) ───────────────
-// Row-Level Security is ENABLED on every user-data table, and `app_user` has no
+// ─── Base client (least-privilege `app_runtime` role, DATABASE_URL) ────────────
+// Row-Level Security is ENABLED on every user-data table, and `app_runtime` has no
 // BYPASSRLS, so this client can only ever see/modify rows once `app.user_id` is set
 // (see `forUser`). Use it DIRECTLY only for the NextAuth tables (User/Account/Session/
 // VerificationToken), which have no RLS because the adapter must read across users at
