@@ -10,6 +10,7 @@ import { computeTaskStats } from "@/lib/taskStats";
 import DraggableProgressBar from "@/components/DraggableProgressBar";
 import GoalsSection from "@/components/GoalsSection";
 import ItemEditModal, { type NewItem } from "@/components/ItemEditModal";
+import { convertItemRemote, convertItemDemo } from "@/lib/itemConvert";
 
 // ─── Shared auth gate ─────────────────────────────────────────────────────────
 
@@ -371,6 +372,16 @@ export default function TasksScreen() {
   // Edit an existing task via the shared modal. `date` empty → clears the due date.
   const handleUpdate = async (item: NewItem, editId?: string) => {
     if (!editId) return;
+
+    // Type changed → convert the task into a reminder/goal (new row in the target table,
+    // source task deleted). It leaves this list and appears in its destination view.
+    if (item.type !== "task") {
+      if (!remote) convertItemDemo("task", editId, item);
+      else await convertItemRemote("task", editId, item);
+      setTasks((prev) => prev.filter((t) => t.id !== editId));
+      return;
+    }
+
     const dueDate = item.date ? new Date(item.date + "T12:00:00").toISOString() : null;
     const apply = (t: Task): Task => ({
       ...t,

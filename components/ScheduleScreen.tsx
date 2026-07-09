@@ -11,6 +11,7 @@ import type { Task, Reminder } from "@/types";
 import { loadLocal, updateLocal } from "@/lib/localStore";
 import { useDataMode } from "@/components/PreferencesProvider";
 import ItemEditModal, { type NewItem } from "@/components/ItemEditModal";
+import { convertItemRemote, convertItemDemo } from "@/lib/itemConvert";
 
 // ─── Priority colours ──────────────────────────────────────────────────────────
 
@@ -458,10 +459,26 @@ export default function ScheduleScreen() {
     if (!isSameMonth(day, month)) setMonth(startOfMonth(day));
   }, [month]);
 
-  const handleAddItem = useCallback(async ({ type, title, date, time, priority, description }: {
-    type: "task" | "reminder";
-    title: string; date: string; time: string; priority: string; description: string;
-  }) => {
+  const handleAddItem = useCallback(async (item: NewItem) => {
+    const { type, title, date, time, priority, description } = item;
+    // A goal has no place on the calendar itself — create it (it shows on the Goals screen).
+    if (type === "goal") {
+      if (!remote) {
+        const now = new Date().toISOString();
+        const goal = {
+          id: `demo-goal-${Date.now()}`, title, unit: item.unit, target: item.target, current: 0,
+          step: item.step, period: item.period, startDate: now, completed: false, completedAt: null,
+          source: "manual", createdAt: now, updatedAt: now,
+        };
+        updateLocal((state) => ({ ...state, goals: [goal, ...state.goals] }));
+      } else {
+        await fetch("/api/goals", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ title, unit: item.unit, target: item.target, step: item.step, period: item.period }),
+        });
+      }
+      return;
+    }
     if (!remote) {
       const now = new Date().toISOString();
       if (type === "task") {
@@ -527,6 +544,21 @@ export default function ScheduleScreen() {
   const handleEditReminder = useCallback((reminder: Reminder) => setEditItem({ kind: "reminder", data: reminder }), []);
 
   const handleUpdateItem = useCallback(async (item: NewItem, editId: string) => {
+    const fromKind = editItem?.kind ?? "task";
+
+    // Type changed → convert: create the target row, delete the source, and move it between
+    // this screen's lists (a goal target lands on the Goals screen, so nothing to add here).
+    if (item.type !== fromKind) {
+      const created = remote
+        ? await convertItemRemote(fromKind, editId, item)
+        : convertItemDemo(fromKind, editId, item);
+      if (fromKind === "task")     setTasks(prev => prev.filter(t => t.id !== editId));
+      if (fromKind === "reminder") setReminders(prev => prev.filter(r => r.id !== editId));
+      if (created && item.type === "task")     setTasks(prev => [...prev, created as Task]);
+      if (created && item.type === "reminder") setReminders(prev => [...prev, created as Reminder]);
+      return;
+    }
+
     if (item.type === "task") {
       const dueDate = item.date ? new Date(item.date + "T12:00:00").toISOString() : null;
       const patch = { title: item.title, priority: item.priority, dueDate, description: item.description || null };
@@ -562,7 +594,7 @@ export default function ScheduleScreen() {
       });
       if (res.ok) { const updated = await res.json(); setReminders(prev => prev.map(r => r.id === editId ? updated : r)); }
     }
-  }, [remote]);
+  }, [remote, editItem]);
 
   // Modal entry point — routes to create or update based on whether an id is supplied.
   const handleSaveItem = useCallback(async (item: NewItem, editId?: string) => {

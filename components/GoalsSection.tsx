@@ -6,6 +6,8 @@ import { startOfWeek } from "date-fns";
 import type { Goal, GoalPeriod } from "@/types";
 import { loadLocal, updateLocal } from "@/lib/localStore";
 import { useDataMode } from "@/components/PreferencesProvider";
+import ItemEditModal, { type NewItem } from "@/components/ItemEditModal";
+import { convertItemRemote, convertItemDemo } from "@/lib/itemConvert";
 
 // Goals completed since the start of this week — from live goals in demo mode, or the
 // durable Completion log (remote). Feeds the momentum bar so cleared wins still count.
@@ -361,6 +363,24 @@ export default function GoalsSection() {
     await fetch(`/api/goals/${id}`, { method: "DELETE" });
   };
 
+  // Shared-modal save: keep it a goal (update fields) or convert it to a task/reminder.
+  const handleGoalModalSave = async (item: NewItem, editId?: string) => {
+    if (!editId || !editing) return;
+    if (item.type === "goal") {
+      await handleEditSave({
+        title: item.title, unit: item.unit, target: item.target, step: item.step,
+        period: item.period, current: editing.current,
+      });
+      return; // handleEditSave clears `editing`
+    }
+    // Convert goal → task/reminder: drop it from the goals list; it re-homes to its destination view.
+    const id = editing.id;
+    setEditing(null);
+    setGoals((prev) => prev.filter((g) => g.id !== id));
+    if (!remote) convertItemDemo("goal", id, item);
+    else await convertItemRemote("goal", id, item);
+  };
+
   if (loading) return null;
 
   // ── Weekly momentum ────────────────────────────────────────────────────────
@@ -447,25 +467,26 @@ export default function GoalsSection() {
         </p>
       ) : (
         <div className="space-y-2">
-          {goals.map((goal) =>
-            editing?.id === goal.id ? (
-              <GoalForm
-                key={goal.id}
-                initial={goal}
-                onSubmit={handleEditSave}
-                onCancel={() => setEditing(null)}
-              />
-            ) : (
-              <GoalCard
-                key={goal.id}
-                goal={goal}
-                onStep={handleStep}
-                onEdit={(g) => { setEditing(g); setShowAdd(false); }}
-                onDelete={handleDelete}
-              />
-            )
-          )}
+          {goals.map((goal) => (
+            <GoalCard
+              key={goal.id}
+              goal={goal}
+              onStep={handleStep}
+              onEdit={(g) => { setEditing(g); setShowAdd(false); }}
+              onDelete={handleDelete}
+            />
+          ))}
         </div>
+      )}
+
+      {/* Edit / convert via the shared modal — the type toggle lets a goal become a task or reminder */}
+      {editing && (
+        <ItemEditModal
+          defaultDate={new Date()}
+          editItem={{ kind: "goal", data: editing }}
+          onSave={handleGoalModalSave}
+          onClose={() => setEditing(null)}
+        />
       )}
     </div>
   );
