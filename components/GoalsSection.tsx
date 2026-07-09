@@ -291,12 +291,18 @@ export default function GoalsSection() {
   };
 
   const handleStep = async (goal: Goal, delta: number) => {
+    const wasComplete = goal.completed || goal.current >= goal.target;
     const next = applyLocal(goal, { current: goal.current + delta });
+    const nowComplete = next.completed;
     setGoals((prev) => prev.map((g) => (g.id === goal.id ? next : g)));
     if (!remote) {
       updateLocal((state) => ({ ...state, goals: state.goals.map((g) => (g.id === goal.id ? next : g)) }));
       return;
     }
+    // Keep the weekly momentum count in sync with the completion the server just recorded,
+    // without refetching — otherwise the bar drops toward 0% the instant a goal is finished.
+    if (nowComplete && !wasComplete) setClearedWins((w) => w + 1);
+    else if (!nowComplete && wasComplete) setClearedWins((w) => Math.max(0, w - 1));
     const res = await fetch(`/api/goals/${goal.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
