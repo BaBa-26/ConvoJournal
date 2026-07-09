@@ -4,7 +4,60 @@ Last updated: 2026-07-09. **Read "🟢 Latest" directly below for current state.
 
 ---
 
-## 🟢 Latest (2026-07-09) — shipped & deployed
+## 🟢 Latest (2026-07-09, PM) — database-level Row-Level Security (RLS) shipped
+
+**Live in prod as of this session.** Every user-data table (`JournalEntry`, `Task`, `Reminder`, `Goal`, `Completion`, `PushSubscription`) now has Postgres RLS enabled with a `tenant_isolation` policy (`"userId" = current_setting('app.user_id', true)`). This is defense-in-depth: previously isolation depended 100% on every Prisma query remembering `where: { userId }`; now Postgres enforces it at the database layer even if a query forgets.
+
+**Architecture** (`lib/prisma.ts`):
+- `forUser(userId)` — wraps every query in a transaction that first runs `SELECT set_config('app.user_id', userId, true)`. Used by **every** user-scoped API route (tasks, goals, reminders, journal, completions, push subscriptions, analyze's context lookups, user/export).
+- `prismaAdmin` — connects as the table-owner role (`ADMIN_DATABASE_URL`, bypasses RLS). Reserved for `app/api/cron/notify` (spans all users: due reminders, daily goal nudge, completed-item cleanup) and `lib/webpush.ts`'s `sendPushToUser`. **Never** import this into a user-facing request handler.
+- Base `prisma` client (now running as `app_runtime`, RLS-restricted) is still used directly for the NextAuth tables (`User`/`Account`/`Session`/`VerificationToken`), which have no RLS — the adapter legitimately reads across users at sign-in.
+- Two routes (`user/data` DELETE, `user/import`) use multi-statement `$transaction`; those set `app.user_id` as the transaction's first raw statement instead of using `forUser()`.
+
+**Runtime role is `app_runtime`, NOT `app_user` — this matters:**
+- ⚠️ **Never create this role via the Neon console "New Role" wizard.** It silently grants `BYPASSRLS` + membership in `neon_superuser`, and critically, **not even the database owner can undo it afterward** — `ALTER ROLE` and `REVOKE neon_superuser FROM ...` both fail with "permission denied" (Neon reserves `ADMIN` on that group to its own control plane). A role created that way makes every RLS policy silently inert (queries succeed, isolation just doesn't happen) with no SQL-level fix. This ate a large chunk of this session — first discovered on prod after the role had already been console-created and env vars already pointed at it.
+- **The only fix once a role is console-tainted: abandon it, create a new one via plain `CREATE ROLE ... WITH LOGIN PASSWORD '...'` as the owner.** That's why the canonical role is now `app_runtime` (created cleanly this way) — the original console-created `app_user` is orphaned/unused in prod and can be deleted via the Neon console UI (SQL can't touch it either, but the console's own delete works fine).
+- `prisma/rls.sql` documents this gotcha inline and includes a step-0 defensive `ALTER ROLE app_runtime WITH NOBYPASSRLS` that will fail loudly (rather than silently no-op) if this class of mistake ever happens again.
+- **Re-run `prisma/rls.sql` after any `db:push` that recreates a table** — `db:push` doesn't know about the grants/policies and drops them when it rebuilds a table.
+
+**Verification tooling** (`scripts/rls-*.ts`, all read RLS_OWNER_URL/etc. from env, never hardcode secrets):
+- `rls-provision.ts` — one-shot: create/rotate a role + apply `rls.sql` + write test URLs to `.env` (branch/test use only, refuses to be mistaken for prod).
+- `rls-create-role.ts` — creates a role via plain SQL, writes the resulting connection string to a file (never stdout/chat) for manual pasting into Vercel.
+- `rls-apply.ts` — applies `prisma/rls.sql` against any owner connection (reusable for prod re-applies after a `db:push`).
+- `rls-check.ts` (`npm run test:rls`) — functional isolation proof: seeds two tagged rows for two real users, proves owner-bypass / fail-closed-when-unscoped / scoped-read-only-own-rows / cross-read-blocked / cross-write-rejected, cleans up after itself. **Branch-only** (creates real rows) — never run against prod.
+- `rls-app-smoke.ts` — same proof but through the *real* `forUser()` extension (not hand-rolled SQL), confirming the actual app code path works over Neon's pooler.
+- `rls-verify.ts` — **read-only, safe on prod.** Structural check only (role attributes, grants, RLS-enabled + policy-count per table). Used to confirm prod without touching any real user rows.
+
+**What was actually verified before/after the prod cutover:**
+1. Full functional isolation proof (`rls-check.ts` + `rls-app-smoke.ts`) on a Neon branch — all checks passed, including through the real `forUser()` code over the pooler.
+2. Structural verification on prod (`rls-verify.ts`) — `app_runtime` has `NOBYPASSRLS`, correct grants, RLS enabled with exactly 1 policy on all 6 tables, NextAuth tables correctly left open.
+3. Post-deploy prod smoke: clean `200`/`401` responses (no `500`s), zero error-level entries in Vercel function logs.
+4. **Not done:** a seeded functional isolation test against prod's *real* data (deliberately skipped — would have briefly attached a throwaway row to a real user's account). The branch proof + prod structural match is the accepted substitute.
+5. **Still needs Aarrav's final confirmation:** sign into the live site with a real account and confirm normal use works cleanly end-to-end. If anything's off, rollback is one line — revert Vercel's `DATABASE_URL` to the old owner string and redeploy.
+
+**Env vars added/changed in Vercel prod:**
+- `DATABASE_URL` — now the `app_runtime` pooled connection string (was the owner string)
+- `ADMIN_DATABASE_URL` — **new**, owner pooled string (used by `prismaAdmin`)
+- `DIRECT_URL` — unchanged (owner, direct — migrations)
+
+**Cleanup still open (low urgency, cosmetic):**
+- Delete the orphaned, console-created `app_user` role from the Neon console (Roles tab) — it's unused now but still exists with its `BYPASSRLS` mistake baked in.
+- A scratchpad file holding the `app_runtime` password (outside the repo, session-temp dir) should be deleted once confirmed no longer needed.
+
+**A caution for next session:** `npx vercel --prod` deploys the **local working directory**, not just committed git state — an uncommitted script (`scripts/rls-create-role.ts`) broke the Vercel build mid-session with a TS narrowing error that `tsc --noEmit` hadn't caught yet (it was written *after* the last local typecheck). Always re-run `npx tsc --noEmit` immediately before any `vercel --prod` if new files were added since the last check, not just after editing existing ones.
+
+### 🐛 Found during this session's manual testing (deferred to next session — none are RLS-related)
+All three surfaced while testing the branch build locally in "this device only" (localStorage) mode. RLS governs the *database*; local mode never touches it, so these need separate, unrelated fixes:
+1. **"This device only" journal saves don't populate Tasks/Goals/Calendar.** The journal save writes to `localStorage` in local mode, but those screens read from the server (`GET /api/tasks` etc.) unconditionally — save goes one place, the list screens read another. Pre-existing bug, not introduced this session.
+2. **Local (device-only) entries leak across accounts on the same browser/device.** `lib/demoData.ts`'s `DEMO_STORAGE_KEY` (`"progress-demo-state-v1"`) and `VAULT_STORAGE_KEY` (`"progress:localVault"`) are **fixed, not scoped per user** — every signed-in account on the same browser reads/writes the same localStorage blob. Real privacy bug; the fix is client-side (key the local store by `userId`, or wipe/reload it on account switch) — RLS cannot help here since this data never reaches the database.
+3. **Mobile UI: crisis-support card overlaps action buttons.** When the self-harm/crisis detector fires, the mobile layout pushes the "keep on device" toggle underneath the Discard/Save buttons, making it hard to tap. This is in the safety-critical review flow (`components/CrisisSupportCard.tsx` + the journal review layout) — should be the first of these three to fix given it's user-safety-adjacent, not just a cosmetic bug.
+
+### Also discussed, decided against (for context, don't re-litigate)
+Considered migrating to **Neon Data API + Neon Auth + Neon RLS** (the Supabase-style "client talks directly to Postgres via a JWT" model) instead of the `forUser()` approach. Decided against it: this app's backend does real work beyond CRUD (Gemini/Groq calls with secret keys, crisis detection, prompt-injection defense, goal auto-advance, cron jobs) that can't move to a thin client-direct-to-DB model, and NextAuth's default session token isn't a verifiable JWT the way Neon RLS wants — adopting it would mean re-platforming auth for no net security gain over what's already shipped. Worth reconsidering only if this app ever goes backend-light from scratch.
+
+---
+
+## Latest (2026-07-09, AM) — shipped & deployed
 
 All committed on `claude/nifty-hamilton-ISukC`, pushed to origin, and deployed to prod (`progress-coral-eight.vercel.app`) via `npx vercel --prod --yes`. Typecheck clean, `npm run test:parser` 47/47, prod smoke test 200/401 as expected. Phase-1 schema was `db:push`'d to prod (additive: `Task.completedAt`, `Goal.completedAt`/`step`, new `Completion` model).
 

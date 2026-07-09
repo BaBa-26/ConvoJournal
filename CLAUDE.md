@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Progress** (repo: CProgress) — mobile-first voice journaling PWA. Users speak a daily brain-dump; the app transcribes it, parses Yesterday/Today/Tomorrow sections, extracts tasks + reminders + trackable goals, and saves to Postgres. Auth-gated for saving; unauthenticated try-mode shows demo data from localStorage. A schedule/calendar view (`/schedule`) and a Goals screen (`/tasks`, unit-based progress) sit alongside the journal. **Profile** (`/profile`) is split from **Settings** (`/settings`); the Journal tab is mic-first with "past entries" one tap away; tasks, reminders **and goals are editable — and convertible between each other — everywhere** (see 3-way conversion); the Today dashboard has task + goals tracker widgets. A marketing **landing** (`/landing`, full-bleed, own chrome) and the **circle-with-dot brand mark** (`components/BrandMark.tsx`, also the favicon/PWA icon) round it out. **Web-push notifications** (reminders + daily goal nudge) are built and env is now set, but delivery is failing 403 (stale subscription) — see Gotchas.
 
-Recent feature work (all deployed): **AI crisis modes** (two-layer self-harm/abuse/violence/distress detection + soft-landing support card, zero-retention — `lib/crisis.ts`); **completed auto-cleanup + weekly momentum bar + goal quick-log/custom-step** (Phase 1); **3-way task↔reminder↔goal conversion** (Phase 2). **Phase 3 (per-item notifications) is the next session's work.**
+Recent feature work (all deployed): **AI crisis modes** (two-layer self-harm/abuse/violence/distress detection + soft-landing support card, zero-retention — `lib/crisis.ts`); **completed auto-cleanup + weekly momentum bar + goal quick-log/custom-step** (Phase 1); **3-way task↔reminder↔goal conversion** (Phase 2); **database-level Row-Level Security** (every user-data table now enforces tenant isolation in Postgres itself, not just via app-level `where: { userId }` — see Architecture). **Phase 3 (per-item notifications) is the next session's work**, alongside three bugs found in manual testing: local-mode (device-only) journal saves don't populate Tasks/Goals/Calendar, local entries leak across accounts on the same browser, and a mobile UI overlap in the crisis-support card. See `TLDR.md` for full detail on all of the above.
 
 ## Commands
 
@@ -79,6 +79,11 @@ Service worker `public/sw.js` shows notifications from pushes. `lib/push.ts` (cl
 ### Chrome / routes
 Root layout renders `SideNav` (desktop) + `BottomNav` + `ProfileButton` (mobile) around a `max-w-2xl` column. All three now hide on `/login`, `/landing`, `/onboarding` (the landing breaks out full-bleed). `app/error.tsx` (route error boundary) + `app/not-found.tsx` (themed 404) handle failures.
 
+### Row-Level Security (RLS)
+Every user-data table (`JournalEntry`, `Task`, `Reminder`, `Goal`, `Completion`, `PushSubscription`) has Postgres RLS enabled with a `tenant_isolation` policy, so isolation is enforced by the database, not just by app code remembering `where: { userId }`. `lib/prisma.ts` exports three things: `prisma` (base client, runs as the restricted `app_runtime` role — used directly only for the un-RLS'd NextAuth tables), `forUser(userId)` (wraps every query in a transaction that first runs `set_config('app.user_id', userId, true)` — **every** user-scoped route uses this), and `prismaAdmin` (owner role via `ADMIN_DATABASE_URL`, bypasses RLS — reserved for `app/api/cron/notify` and `lib/webpush.ts`, which legitimately span all users). Policies live in `prisma/rls.sql`, applied manually (not part of `db:push`) — **re-run it after any `db:push` that recreates a table**, since `db:push` doesn't know about the grants/policies and drops them. `scripts/rls-verify.ts` is a read-only structural check safe to run against prod at any time.
+
+⚠️ **Never create the `app_runtime` role via the Neon console.** The console's "New Role" wizard grants `BYPASSRLS` + `neon_superuser` membership, and once created that way, **not even the database owner can undo it** (`ALTER ROLE`/`REVOKE` both fail with permission denied — Neon reserves admin on that group to itself). A role created via the console silently ignores every RLS policy. Always `CREATE ROLE app_runtime WITH LOGIN PASSWORD '...'` via plain SQL as the owner instead (see the GOTCHA comment at the top of `prisma/rls.sql`). Full story in `TLDR.md`.
+
 ## Key Files
 
 | File | Role |
@@ -104,12 +109,16 @@ Root layout renders `SideNav` (desktop) + `BottomNav` + `ProfileButton` (mobile)
 | `middleware.ts` | Rate limiting + CSP/HSTS/security headers |
 | `prisma/schema.prisma` | User, JournalEntry, Task, Reminder, **Goal**, **Completion** + NextAuth models |
 | `types/index.ts` | All shared TS types (incl. `Goal`, `Completion`, `CompletionsSummary`, `ExtractedGoal`, `GoalUpdate`, `GoalPeriod`) |
+| `lib/prisma.ts` | `prisma` (base, `app_runtime` role) / `forUser(userId)` (RLS-scoped, use for all user-data queries) / `prismaAdmin` (owner, cron + webpush only) |
+| `prisma/rls.sql` | RLS policies + grants for `app_runtime` — apply manually via `scripts/rls-apply.ts`, re-apply after any `db:push` |
+| `scripts/rls-verify.ts` | Read-only structural RLS check — safe to run against prod |
 
 ## Environment Variables
 
 ```
-DATABASE_URL=           # Neon pooled connection string
-DIRECT_URL=             # Neon direct connection (for migrations)
+DATABASE_URL=           # Neon pooled connection string — the app_runtime role (RLS-restricted)
+DIRECT_URL=             # Neon direct connection, OWNER role (for migrations / db:push)
+ADMIN_DATABASE_URL=     # Neon pooled connection, OWNER role — prismaAdmin (cron + webpush, bypasses RLS)
 GROQ_API_KEY=           # Groq Whisper transcription
 NEXTAUTH_SECRET=        # generate: openssl rand -base64 32
 NEXTAUTH_URL=           # http://localhost:3000 (dev) / https://... (prod)
@@ -161,6 +170,10 @@ CRON_SECRET=                # random; Vercel Cron sends it as `Authorization: Be
 - **Run `db:push` BEFORE (or with) deploying any schema change.** Deploying code whose Prisma schema added `User` columns without migrating first once broke Google sign-in in prod: NextAuth's PrismaAdapter selects *all* User columns, so the missing columns made every User query throw. The DB and code must move together.
 - **Vercel Git auto-deploy is broken** since the GitHub repo was renamed (`ConvoJournal` → `Progress`); pushing no longer triggers a build. **Deploy with `npx vercel --prod --yes`** (CLI is authed as `baba-26`, project `progress`). Push to `origin` too, just to keep the repo current.
 - **Notifications (Phase 3, next session):** VAPID + `CRON_SECRET` are set in prod, but a live `POST /api/cron/notify` logs `[webpush] send failed 403` — the stored subscription was created against a public key that no longer pairs with the current private key. Fix path: re-toggle the notifications slider (re-subscribe with the current key), then "Send test" (fires immediately, bypasses the cron). On iPhone push only works after Add-to-Home-Screen; Hobby cron is once/day, so for timely reminders point an external pinger (cron-job.org) at `/api/cron/notify?key=<CRON_SECRET>`. Then build the per-item "notify me" toggles (Task/Reminder/Goal `notify` fields + cron passes).
+- **Never create the `app_runtime` (RLS) role via the Neon console.** It grants `BYPASSRLS` + `neon_superuser` membership that not even the owner can later strip. Always `CREATE ROLE app_runtime WITH LOGIN PASSWORD '...'` via plain SQL. See the "Row-Level Security" architecture section above and `prisma/rls.sql`'s header comment for the full story.
+- **`npx vercel --prod` deploys the local working directory, not committed git state.** An uncommitted script once broke a prod build with a type error `tsc --noEmit` hadn't caught (written after the last local typecheck). Re-run `npx tsc --noEmit` immediately before any `vercel --prod` if files were added since the last check.
+- **`prisma/rls.sql` must be re-applied after any `db:push` that recreates a table** — `db:push` doesn't know about the RLS grants/policies and drops them when it rebuilds a table. Run `scripts/rls-apply.ts` (or `scripts/rls-verify.ts` first, to check if it's actually needed).
+- **Three bugs found in manual testing, deferred (none are RLS-related — see TLDR.md for full detail):** (1) "this device only" journal saves don't populate Tasks/Goals/Calendar (save goes to localStorage, those screens read from the server); (2) local (device-only) entries leak across accounts on the same browser — `lib/demoData.ts`'s storage keys aren't scoped per user; (3) mobile UI: the crisis-support card's "keep on device" toggle overlaps the Discard/Save buttons — fix this one first, it's in the safety-critical flow.
 ## 🛑 CRITICAL GUARDRAILS & SECURITY BEHAVIOR
 
 ### 1. Security & Data Protection
