@@ -8,6 +8,12 @@ import { prisma } from "./prisma";
 const googleConfigured =
   Boolean(process.env.GOOGLE_CLIENT_ID) && Boolean(process.env.GOOGLE_CLIENT_SECRET);
 
+// NextAuth's Credentials provider (dev-only) CANNOT create database sessions — the adapter
+// only persists sessions for OAuth/email logins. So in development we use JWT sessions (which
+// the credentials provider supports); production keeps database sessions for Google OAuth,
+// exactly as before. Gated on NODE_ENV so prod is untouched.
+const useJwtSessions = process.env.NODE_ENV === "development";
+
 export const authOptions: NextAuthOptions = {
   adapter: PrismaAdapter(prisma),
 
@@ -44,16 +50,44 @@ export const authOptions: NextAuthOptions = {
       : []),
   ],
 
-  session: { strategy: "database" },
+  session: { strategy: useJwtSessions ? "jwt" : "database" },
 
   callbacks: {
-    session({ session, user }) {
-      if (session.user) {
-        session.user.id = user.id;
+    // JWT mode (dev): stash the user's id/onboarded/displayName into the token on sign-in.
+    // On a session refresh (update() — e.g. after onboarding) re-read the changed fields from
+    // the DB so onboarded=true propagates and the onboarding gate doesn't loop.
+    async jwt({ token, user, trigger }) {
+      if (user) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const u = user as any;
+        token.uid         = u.id;
+        token.onboarded   = u.onboarded   ?? false;
+        token.displayName = u.displayName ?? null;
+      } else if (trigger === "update" && token.uid) {
+        const fresh = await prisma.user.findUnique({
+          where:  { id: token.uid as string },
+          select: { onboarded: true, displayName: true },
+        });
+        if (fresh) {
+          token.onboarded   = fresh.onboarded;
+          token.displayName = fresh.displayName ?? null;
+        }
+      }
+      return token;
+    },
+    // Works for both strategies: database mode passes `user`, JWT mode passes `token`.
+    session({ session, user, token }) {
+      if (!session.user) return session;
+      if (user) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const u = user as any;
+        session.user.id          = u.id;
         session.user.onboarded   = u.onboarded   ?? false;
         session.user.displayName = u.displayName ?? null;
+      } else if (token) {
+        session.user.id          = (token.uid as string) ?? (token.sub as string);
+        session.user.onboarded   = (token.onboarded as boolean) ?? false;
+        session.user.displayName = (token.displayName as string | null) ?? null;
       }
       return session;
     },

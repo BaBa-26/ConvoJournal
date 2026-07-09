@@ -58,11 +58,13 @@ function IdlePhase({
   onWrite,
   entryCount,
   onViewEntries,
+  isGuest,
 }: {
   onStart: () => void;
   onWrite: () => void;
   entryCount: number;
   onViewEntries: () => void;
+  isGuest: boolean;
 }) {
   return (
     <div className="flex flex-col flex-1 animate-fade-in pb-nav">
@@ -78,6 +80,12 @@ function IdlePhase({
           <p className="font-mono text-parchment-800 text-[11px] tracking-wide">
             speak your mind or write it out
           </p>
+          {isGuest && (
+            <p className="font-mono text-parchment-600 text-xs leading-relaxed max-w-[18rem] mx-auto pt-4">
+              new here? try talking through your day — goals you have for the week or
+              month, tasks you need to get done, or something you want to get better at.
+            </p>
+          )}
         </div>
 
         <div className="relative flex items-center justify-center">
@@ -1046,6 +1054,7 @@ export default function JournalScreen() {
             onWrite={() => setPhase("writing")}
             entryCount={entries.length}
             onViewEntries={() => setViewingEntries(true)}
+            isGuest={!session}
           />
         )}
         {phase === "idle" && viewingEntries && (

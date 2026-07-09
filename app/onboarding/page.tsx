@@ -1,8 +1,7 @@
 "use client";
 
 import { useSession } from "next-auth/react";
-import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 
 const slide = {
@@ -24,7 +23,6 @@ function formatTime(value: string): string | null {
 
 export default function OnboardingPage() {
   const { data: session, update } = useSession();
-  const router = useRouter();
 
   const [step, setStep]                 = useState(0);
   const [displayName, setDisplayName]   = useState(session?.user?.name ?? "");
@@ -33,6 +31,13 @@ export default function OnboardingPage() {
   const [error, setError]               = useState<string | null>(null);
 
   const totalSteps = 3;
+
+  // Self-heal: if the user is already onboarded (e.g. a stale client guard bounced them here,
+  // or they revisit /onboarding), send them into the app. A hard navigation guarantees a clean
+  // server render with the current cookie — no client router-cache staleness.
+  useEffect(() => {
+    if (session?.user?.onboarded === true) window.location.assign("/");
+  }, [session]);
 
   async function finish() {
     setSaving(true);
@@ -47,9 +52,11 @@ export default function OnboardingPage() {
         }),
       });
       if (!res.ok) throw new Error();
-      // Refresh the NextAuth session so onboarded=true propagates
+      // Refresh the NextAuth session so onboarded=true propagates into the cookie, then do a
+      // HARD navigation (not router.replace) — a clean server render reads the fresh cookie and
+      // the DB-authoritative gate in app/page.tsx, sidestepping any client router-cache/JWT race.
       await update();
-      router.replace("/");
+      window.location.assign("/");
     } catch {
       setError("Something went wrong. Try again.");
       setSaving(false);
