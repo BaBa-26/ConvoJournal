@@ -4,7 +4,7 @@
 // Prints pass/fail per fixture and exits non-zero on any failure.
 
 import { parseJournalEntry, detectMood } from "../lib/parser";
-import { detectCrisisSignals, mergeRisk, sanitizeRisk } from "../lib/crisis";
+import { detectCrisisSignals, mergeRisk, sanitizeRisk, filterCrisisActionables } from "../lib/crisis";
 
 type Check = { name: string; run: () => string | null }; // null = pass, string = failure detail
 
@@ -285,6 +285,53 @@ check("crisis: ordinary bad day → none", () => {
   return expect(s.level === "none" && s.flags.length === 0, `false positive: ${JSON.stringify(s)}`);
 });
 
+check("crisis: explicit death wish → crisis (want to die / wish I was dead)", () => {
+  return firstFail(
+    expect(detectCrisisSignals("Some days I just want to die.").level === "crisis", "'want to die' missed"),
+    expect(detectCrisisSignals("I wish I was dead.").level === "crisis", "'wish I was dead' missed"),
+    expect(detectCrisisSignals("I'd rather be dead than keep feeling this.").level === "crisis", "'rather be dead' missed")
+  );
+});
+
+check("crisis: passive ideation / can't-cope phrasing → concern (never none)", () => {
+  const phrases = [
+    "I want it to end.",
+    "I just want the pain to stop.",
+    "I can't go on.",
+    "I can't keep going anymore.",
+    "I'm not sure if I can handle it anymore.",
+    "There's nothing left for me.",
+    "I don't see a way out.",
+    "Nobody would even notice if I was gone.",
+  ];
+  const fails = phrases
+    .map((p) => ({ p, s: detectCrisisSignals(p) }))
+    .filter(({ s }) => s.level === "none" || !s.flags.includes("self_harm"));
+  return expect(fails.length === 0, `not flagged: ${JSON.stringify(fails.map((f) => f.p))}`);
+});
+
+check("crisis: real soft-signal entry (no explicit keyword) → concern", () => {
+  const s = detectCrisisSignals(
+    "My wife left me. My kids don't talk to me anymore. I'm not sure I can handle it anymore. I want it to end."
+  );
+  return expect(
+    s.level === "concern" && s.flags.includes("self_harm"),
+    `got ${JSON.stringify(s)}`
+  );
+});
+
+check("crisis: negated death wish demotes to concern — never none", () => {
+  const s = detectCrisisSignals("I would never want to die, but I'm struggling.");
+  return expect(s.level === "concern", `got ${JSON.stringify(s)}`);
+});
+
+check("crisis: mundane 'end' phrasing stays none (no over-fire)", () => {
+  return firstFail(
+    expect(detectCrisisSignals("Ugh, I want this meeting to end already.").level === "none", "'meeting to end' false positive"),
+    expect(detectCrisisSignals("I can't wait for this week to be over.").level === "none", "'week to be over' false positive")
+  );
+});
+
 check("crisis: mergeRisk takes max level and unions flags", () => {
   const merged = mergeRisk(
     { level: "concern", flags: ["distress"] },
@@ -312,6 +359,53 @@ check("crisis: sanitizeRisk returns undefined for garbage / empty", () => {
     expect(sanitizeRisk({ level: "none", flags: [] }) === undefined, "empty none not collapsed"),
     expect(sanitizeRisk(null) === undefined, "null not rejected")
   );
+});
+
+// ── Crisis-derived actionable filtering (never turn a crisis phrase into a task) ──
+
+check("filter: 'I want to die' produces no task", () => {
+  const a = filterCrisisActionables(parseJournalEntry("I want to die."), "I want to die.");
+  return expect(a.tasks.length === 0, `leaked tasks: ${JSON.stringify(a.tasks)}`);
+});
+
+check("filter: crisis phrase dropped but real reminder in same entry kept", () => {
+  const content = "I want to kill myself. Remind me I have a call with mom tomorrow at 5pm.";
+  const a = filterCrisisActionables(parseJournalEntry(content), content);
+  const noCrisisTask = !a.tasks.some((t) => /kill|myself|die/i.test(t.title));
+  const keptMom = a.reminders.some((r) => /mom/i.test(r.title)) || a.tasks.some((t) => /mom/i.test(t.title));
+  return firstFail(
+    expect(noCrisisTask, `crisis task leaked: ${JSON.stringify(a.tasks)}`),
+    expect(keptMom, `real reminder dropped: ${JSON.stringify(a)}`)
+  );
+});
+
+check("filter: real to-dos in later sentences survive alongside a crisis line", () => {
+  const content = "I want to die. I need to submit my report and call the dentist tomorrow.";
+  const a = filterCrisisActionables(parseJournalEntry(content), content);
+  return firstFail(
+    expect(a.tasks.some((t) => /report/i.test(t.title)), `report task dropped: ${JSON.stringify(a.tasks)}`),
+    expect(a.tasks.some((t) => /dentist/i.test(t.title)), `dentist task dropped: ${JSON.stringify(a.tasks)}`),
+    expect(!a.tasks.some((t) => /die|dead/i.test(t.title)), `crisis task leaked: ${JSON.stringify(a.tasks)}`)
+  );
+});
+
+check("filter: fused run-on ('...die but I should X') never leaks self-harm text", () => {
+  // The parser can't split this single sentence, so the whole fused task is dropped
+  // (fail-safe) rather than shown with 'die' in its title.
+  const content = "I want to die but I should submit my report.";
+  const a = filterCrisisActionables(parseJournalEntry(content), content);
+  return expect(
+    !a.tasks.some((t) => /\b(?:die|dead|kill)\b/i.test(t.title)),
+    `self-harm text leaked into a task: ${JSON.stringify(a.tasks)}`
+  );
+});
+
+check("filter: clean multi-topic entry (no risk) is untouched", () => {
+  const content = "Rough day but I need to call the dentist tomorrow at 3pm and submit my report.";
+  const before = parseJournalEntry(content);
+  const after = filterCrisisActionables(parseJournalEntry(content), content);
+  return expect(after.tasks.length === before.tasks.length && before.tasks.length >= 2,
+    `changed clean entry: ${before.tasks.length} -> ${after.tasks.length}`);
 });
 
 // ── Runner ────────────────────────────────────────────────────────────────────

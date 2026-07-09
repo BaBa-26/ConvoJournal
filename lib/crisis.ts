@@ -39,9 +39,12 @@ const CATEGORIES: CategoryPatterns[] = [
   {
     flag: "self_harm",
     crisis:
-      /\b(?:kill(?:ing)?\s+myself|end(?:ing)?\s+my\s+life|end\s+it\s+all|suicidal?|take\s+my\s+own\s+life|hurt(?:ing)?\s+myself|harm(?:ing)?\s+myself|self[-\s]?harm|cut(?:ting)?\s+myself|(?:don'?t|do\s+not)\s+want\s+to\s+(?:live|be\s+alive|wake\s+up)|better\s+off\s+dead|no\s+reason\s+to\s+(?:live|keep\s+going)|overdos(?:e|ed|ing))\b/i,
+      /\b(?:kill(?:ing)?\s+myself|end(?:ing)?\s+my\s+life|end\s+it\s+all|suicidal?|take\s+my\s+own\s+life|hurt(?:ing)?\s+myself|harm(?:ing)?\s+myself|self[-\s]?harm|cut(?:ting)?\s+myself|(?:don'?t|do\s+not)\s+want\s+to\s+(?:live|be\s+alive|wake\s+up)|want(?:ing|ed)?\s+to\s+die|wish\s+i\s+(?:was|were)\s+dead|wish\s+i\s+(?:wasn'?t|was\s+not|were\s+not)\s+(?:alive|here|born)|rather\s+be\s+dead|better\s+off\s+dead|no\s+reason\s+to\s+(?:live|keep\s+going)|overdos(?:e|ed|ing))\b/i,
+    // Passive ideation and "can't cope / it's over" phrasing land at concern (the
+    // gentle card) — real signals, but ambiguous enough that the full-alarm crisis
+    // tier would over-fire ("I want this week to end"). Concern never demotes.
     concern:
-      /\b(?:hopeless|worthless|no\s+point\s+(?:anymore|in\s+anything)|what'?s\s+the\s+point|can'?t\s+take\s+(?:it|this)\s+anymore|can'?t\s+do\s+this\s+anymore|want\s+to\s+disappear|everyone\s+would\s+be\s+better\s+without\s+me)\b/i,
+      /\b(?:hopeless|worthless|no\s+point\s+(?:anymore|in\s+anything)|what'?s\s+the\s+point|can'?t\s+take\s+(?:it|this)\s+anymore|can'?t\s+do\s+this\s+anymore|can'?t\s+(?:go\s+on|keep\s+going|carry\s+on|cope\s+anymore)|can'?t\s+handle\s+(?:it|this)(?:\s+anymore)?|(?:not\s+sure|don'?t\s+know)\s+(?:if\s+)?i\s+can\s+(?:handle|take|keep\s+going|go\s+on|cope|do\s+this)|want\s+(?:it|it\s+all|all\s+of\s+this|this|everything|the\s+pain)\s+to\s+(?:end|stop|be\s+over|go\s+away)|give\s+up\s+on\s+(?:everything|life|it\s+all)|nothing\s+left\s+(?:for\s+me|to\s+live\s+for)|(?:don'?t|do\s+not)\s+see\s+(?:a\s+way\s+out|the\s+point|any\s+way\s+forward)|(?:nobody|no\s+one)\s+would\s+(?:even\s+)?(?:notice|care|miss\s+me)\s+if\s+i\s+(?:was|were)\s+(?:gone|here|around)|want\s+to\s+disappear|everyone\s+would\s+be\s+better\s+without\s+me)\b/i,
   },
   {
     flag: "abuse",
@@ -139,6 +142,80 @@ export function sanitizeRisk(raw: unknown): RiskSignal | undefined {
 export function stripRisk<T extends { risk?: unknown }>(analysis: T): Omit<T, "risk"> {
   const { risk: _risk, ...rest } = analysis;
   return rest;
+}
+
+// ── Crisis-derived actionable filtering ──────────────────────────────────────
+// A person writing "I want to die" must never see it turned into a task titled
+// "Die". The extractors (regex parser AND Gemini) mine intent verbs indiscriminately,
+// so we strip any extracted task/reminder/goal that is *itself* the crisis phrasing —
+// while preserving the user's real, unrelated to-dos in the same entry.
+//
+// Provenance, not a title keyword check: a bare title ("Die") doesn't trip the
+// detector on its own, so we compare each item against the exact phrases the detector
+// MATCHED in the entry. An item whose every significant word lives inside a matched
+// crisis phrase was born from it → drop. Scoping to the matched phrase (not the whole
+// sentence) is what lets "I want to die but I should submit my report" keep the report.
+
+const STOPWORDS = new Set([
+  "the", "a", "an", "to", "and", "i", "my", "me", "it", "this", "that", "for", "of",
+  "on", "at", "in", "is", "am", "be", "then", "also", "just", "with", "up", "so", "or",
+]);
+
+// Unambiguous self-harm vocabulary — words that should never appear in an extracted
+// to-do title under any phrasing. Kept deliberately narrow so it can't false-drop
+// ordinary tasks ("kill" alone is common in tech notes, so it requires "myself").
+const HARD_SELF_HARM =
+  /\b(?:die|died|dying|dead|suicid(?:e|al)|overdos(?:e|ed|ing)|(?:kill(?:ing)?|har?m(?:ing)?|hurt(?:ing)?|cut(?:ting)?)\s+myself|end(?:ing)?\s+my\s+life|end\s+it\s+all)\b/i;
+
+function significantTokens(s: string): string[] {
+  return (s.toLowerCase().match(/[a-z']+/g) ?? []).filter(
+    (w) => w.length > 1 && !STOPWORDS.has(w)
+  );
+}
+
+// Every crisis/concern phrase the detector matches in `text`, joined. Uses global
+// clones of the category regexes so multiple hits across the entry are all captured.
+export function crisisMatchText(text: string): string {
+  const hits: string[] = [];
+  for (const cat of CATEGORIES) {
+    for (const re of [cat.crisis, cat.concern]) {
+      if (!re) continue;
+      const g = new RegExp(re.source, re.flags.includes("g") ? re.flags : re.flags + "g");
+      for (const m of text.matchAll(g)) hits.push(m[0]);
+    }
+  }
+  return hits.join(" ");
+}
+
+// Drop extracted actionables that ARE the crisis phrasing. Mutates in place (the
+// analyze route holds `analysis` mutably) and returns it. `goalUpdates` are left
+// alone — they reference existing goal IDs, never free-text derived from the entry.
+export function filterCrisisActionables<
+  T extends {
+    tasks: { title: string }[];
+    reminders: { title: string }[];
+    goals?: { title: string }[];
+  },
+>(analysis: T, content: string): T {
+  const crisisTokens = new Set(significantTokens(crisisMatchText(content)));
+  if (crisisTokens.size === 0) return analysis;
+
+  const bornFromCrisis = (title: string): boolean => {
+    // Backstop: unambiguous self-harm vocabulary must never surface in a to-do,
+    // even when the extractor fuses a crisis clause with a real action into one
+    // title ("Die but I should submit my report" — a run-on the parser can't split).
+    if (HARD_SELF_HARM.test(title)) return true;
+    // Otherwise: the whole title is crisis material (every significant word came
+    // from a matched crisis phrase). Subset — never a mere overlap — so a legit task
+    // that happens to share one common word ("end the project") is NOT dropped.
+    const toks = significantTokens(title);
+    return toks.length > 0 && toks.every((t) => crisisTokens.has(t));
+  };
+
+  analysis.tasks = analysis.tasks.filter((t) => !bornFromCrisis(t.title));
+  analysis.reminders = analysis.reminders.filter((r) => !bornFromCrisis(r.title));
+  if (analysis.goals) analysis.goals = analysis.goals.filter((g) => !bornFromCrisis(g.title));
+  return analysis;
 }
 
 // ── Support resources (static — never model-generated) ───────────────────────

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { parseJournalEntry } from "@/lib/parser";
 import { AnalyzeSchema, validate } from "@/lib/validators";
 import { analyzeWithGemini } from "@/lib/gemini";
-import { detectCrisisSignals, mergeRisk } from "@/lib/crisis";
+import { detectCrisisSignals, mergeRisk, filterCrisisActionables } from "@/lib/crisis";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -69,7 +69,13 @@ export async function POST(req: NextRequest) {
     // and merges with the AI's assessment — max level, union of flags. The result
     // is transient (response-only): never persisted, never logged.
     analysis.risk = mergeRisk(detectCrisisSignals(content), analysis.risk);
-    if (analysis.risk.level === "none") delete analysis.risk;
+    if (analysis.risk.level === "none") {
+      delete analysis.risk;
+    } else {
+      // Never let a crisis phrase become a to-do: strip actionables that ARE the
+      // crisis phrasing, while keeping the user's real, unrelated tasks/reminders.
+      filterCrisisActionables(analysis, content);
+    }
 
     return NextResponse.json(analysis);
   } catch (error) {

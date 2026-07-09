@@ -118,7 +118,9 @@ Rules:
   - Use ONLY the four flag strings above — never invent categories.
   - Ordinary sadness, stress, venting, or a bad day is NOT a crisis — level "none", no flags.
   - Fiction, media references, or clearly hypothetical talk → at most "concern".
-  - This signal must NOT change the extraction: still fill the other fields normally.
+  - This signal must NOT change the extraction of the user's real, unrelated to-dos.
+  - BUT never turn the crisis statement itself into a task/reminder/goal: e.g. "I want
+    to die" must NOT yield a task "Die". Extract genuine actionables only ("call mom").
 
 [GENERAL RULES]
 - Do NOT emit tasks/reminders semantically equivalent to anything in the provided pending list
