@@ -39,6 +39,10 @@ export async function POST(req: NextRequest) {
     const counts = { entries: 0, tasks: 0, reminders: 0, goals: 0 };
 
     await prisma.$transaction(async (tx) => {
+      // Make app.user_id visible to the RLS policies for the whole transaction so the WITH CHECK
+      // predicate passes on every insert (without it current_setting is NULL and writes are rejected).
+      await tx.$executeRaw`SELECT set_config('app.user_id', ${userId}, true)`;
+
       // Journal entries + their nested (journal-sourced) tasks/reminders.
       for (const e of entries) {
         const date = midnight(e.date);

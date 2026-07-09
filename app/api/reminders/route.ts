@@ -1,14 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { forUser } from "@/lib/prisma";
 import { requireAuth } from "@/lib/auth";
 import { ReminderCreateSchema, validate } from "@/lib/validators";
 
 export async function GET(req: NextRequest) {
   const auth = await requireAuth();
   if (auth instanceof NextResponse) return auth;
+  const db = forUser(auth.userId);
 
   try {
-    const reminders = await prisma.reminder.findMany({
+    const reminders = await db.reminder.findMany({
       where:   { userId: auth.userId },
       orderBy: { eventDate: "asc" },
     });
@@ -22,13 +23,14 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const auth = await requireAuth();
   if (auth instanceof NextResponse) return auth;
+  const db = forUser(auth.userId);
 
   try {
     const body = await req.json();
     const parsed = validate(ReminderCreateSchema, body);
     if (!parsed.ok) return NextResponse.json(parsed.error, { status: 400 });
 
-    const reminder = await prisma.reminder.create({
+    const reminder = await db.reminder.create({
       data: {
         title:       parsed.data.title,
         description: parsed.data.description ?? null,

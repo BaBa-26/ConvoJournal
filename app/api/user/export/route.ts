@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { prisma, forUser } from "@/lib/prisma";
 import { requireAuth } from "@/lib/auth";
 
 // GET /api/user/export — download all of the caller's data as a JSON file.
@@ -8,6 +8,7 @@ import { requireAuth } from "@/lib/auth";
 export async function GET() {
   const auth = await requireAuth();
   if (auth instanceof NextResponse) return auth;
+  const db = forUser(auth.userId);
 
   try {
     const [user, entries, tasks, goals, reminders] = await Promise.all([
@@ -34,10 +35,10 @@ export async function GET() {
           surfaceStyle: true,
         },
       }),
-      prisma.journalEntry.findMany({ where: { userId: auth.userId }, orderBy: { date: "desc" } }),
-      prisma.task.findMany({ where: { userId: auth.userId }, orderBy: { createdAt: "desc" } }),
-      prisma.goal.findMany({ where: { userId: auth.userId }, orderBy: { createdAt: "desc" } }),
-      prisma.reminder.findMany({ where: { userId: auth.userId }, orderBy: { eventDate: "desc" } }),
+      db.journalEntry.findMany({ where: { userId: auth.userId }, orderBy: { date: "desc" } }),
+      db.task.findMany({ where: { userId: auth.userId }, orderBy: { createdAt: "desc" } }),
+      db.goal.findMany({ where: { userId: auth.userId }, orderBy: { createdAt: "desc" } }),
+      db.reminder.findMany({ where: { userId: auth.userId }, orderBy: { eventDate: "desc" } }),
     ]);
 
     const payload = {

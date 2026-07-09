@@ -12,7 +12,8 @@
     "db:studio": "prisma studio",
     "postinstall": "prisma generate",
     "test:gemini": "tsx scripts/test-gemini.ts",
-    "test:parser": "tsx scripts/parser-check.ts"
+    "test:parser": "tsx scripts/parser-check.ts",
+    "test:rls": "tsx scripts/rls-check.ts"
   },
   "repository": {
     "type": "git",

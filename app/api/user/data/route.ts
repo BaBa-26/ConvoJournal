@@ -13,12 +13,15 @@ export async function DELETE() {
   try {
     const userId = auth.userId;
     // Order: children before entries (tasks/reminders reference journalEntryId). Goals stand alone.
-    await prisma.$transaction([
-      prisma.task.deleteMany({ where: { userId } }),
-      prisma.reminder.deleteMany({ where: { userId } }),
-      prisma.goal.deleteMany({ where: { userId } }),
-      prisma.journalEntry.deleteMany({ where: { userId } }),
-    ]);
+    // set_config makes app.user_id visible to the RLS policies for the whole transaction, so the
+    // deletes actually match rows (without it, current_setting is NULL → RLS filters everything out).
+    await prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT set_config('app.user_id', ${userId}, true)`;
+      await tx.task.deleteMany({ where: { userId } });
+      await tx.reminder.deleteMany({ where: { userId } });
+      await tx.goal.deleteMany({ where: { userId } });
+      await tx.journalEntry.deleteMany({ where: { userId } });
+    });
     return NextResponse.json({ ok: true });
   } catch (error) {
     if (process.env.NODE_ENV !== "production") console.error("[user data DELETE]", error);

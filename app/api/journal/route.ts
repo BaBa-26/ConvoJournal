@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { forUser } from "@/lib/prisma";
 import { requireAuth } from "@/lib/auth";
 import { JournalCreateSchema, validate } from "@/lib/validators";
 
@@ -12,13 +12,14 @@ function safeParseDateOrThrow(s?: string): Date {
 export async function GET(req: NextRequest) {
   const auth = await requireAuth();
   if (auth instanceof NextResponse) return auth;
+  const db = forUser(auth.userId);
 
   try {
     const { searchParams } = new URL(req.url);
     const rawLimit = parseInt(searchParams.get("limit") ?? "30", 10);
     const limit = isNaN(rawLimit) ? 30 : Math.min(Math.max(rawLimit, 1), 100);
 
-    const entries = await prisma.journalEntry.findMany({
+    const entries = await db.journalEntry.findMany({
       where:   { userId: auth.userId },
       orderBy: { date: "desc" },
       take:    limit,
@@ -35,6 +36,7 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const auth = await requireAuth();
   if (auth instanceof NextResponse) return auth;
+  const db = forUser(auth.userId);
 
   try {
     const body = await req.json();
@@ -51,7 +53,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Invalid date" }, { status: 400 });
     }
 
-    const entry = await prisma.journalEntry.upsert({
+    const entry = await db.journalEntry.upsert({
       where:  { userId_date: { userId: auth.userId, date: entryDate } },
       update: {
         rawContent,
@@ -73,7 +75,7 @@ export async function POST(req: NextRequest) {
 
     // Create tasks from analysis
     if (analysis?.tasks?.length) {
-      await prisma.task.createMany({
+      await db.task.createMany({
         data: analysis.tasks.map((t) => ({
           title:          t.title,
           description:    t.description ?? null,
@@ -88,7 +90,7 @@ export async function POST(req: NextRequest) {
 
     // Create reminders from analysis
     if (analysis?.reminders?.length) {
-      await prisma.reminder.createMany({
+      await db.reminder.createMany({
         data: analysis.reminders.map((r) => ({
           title:          r.title,
           description:    r.description ?? null,
@@ -101,7 +103,7 @@ export async function POST(req: NextRequest) {
 
     // Create new goals surfaced by the entry
     if (analysis?.goals?.length) {
-      await prisma.goal.createMany({
+      await db.goal.createMany({
         data: analysis.goals.map((g) => {
           const target = Math.max(1, Math.round(g.target));
           return {
@@ -121,25 +123,25 @@ export async function POST(req: NextRequest) {
     // Apply progress increments against the user's existing goals (ownership re-checked per id)
     if (analysis?.goalUpdates?.length) {
       for (const gu of analysis.goalUpdates) {
-        const goal = await prisma.goal.findFirst({ where: { id: gu.goalId, userId: auth.userId } });
+        const goal = await db.goal.findFirst({ where: { id: gu.goalId, userId: auth.userId } });
         if (!goal) continue;
         const next = Math.min(goal.target, goal.current + Math.max(1, Math.round(gu.increment)));
         const nowComplete = next >= goal.target;
         const justCompleted = nowComplete && !goal.completed;
-        await prisma.goal.update({
+        await db.goal.update({
           where: { id: goal.id },
           data:  { current: next, completed: nowComplete, ...(justCompleted ? { completedAt: new Date() } : {}) },
         });
         // Record the durable win so the momentum bar credits journal-driven completions too.
         if (justCompleted) {
-          await prisma.completion.create({
+          await db.completion.create({
             data: { kind: "goal", title: goal.title, userId: auth.userId },
           });
         }
       }
     }
 
-    const full = await prisma.journalEntry.findUnique({
+    const full = await db.journalEntry.findUnique({
       where:   { id: entry.id },
       include: { tasks: true, reminders: true },
     });

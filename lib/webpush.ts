@@ -1,5 +1,5 @@
 import webpush from "web-push";
-import { prisma } from "./prisma";
+import { prismaAdmin } from "./prisma";
 
 // VAPID = the keypair that proves a push came from *your* server. Configured lazily so the app
 // still boots if the keys aren't set yet (push just no-ops until they are).
@@ -29,7 +29,7 @@ export async function sendPushToUser(userId: string, payload: PushPayload): Prom
     console.error("[webpush] VAPID keys not set — skipping push");
     return 0;
   }
-  const subs = await prisma.pushSubscription.findMany({ where: { userId } });
+  const subs = await prismaAdmin.pushSubscription.findMany({ where: { userId } });
   let sent = 0;
 
   await Promise.all(
@@ -44,7 +44,7 @@ export async function sendPushToUser(userId: string, payload: PushPayload): Prom
         const status = (err as { statusCode?: number })?.statusCode;
         // 404 (gone) / 410 (unsubscribed) → the subscription is dead; remove it.
         if (status === 404 || status === 410) {
-          await prisma.pushSubscription.delete({ where: { id: s.id } }).catch(() => {});
+          await prismaAdmin.pushSubscription.delete({ where: { id: s.id } }).catch(() => {});
         } else {
           console.error("[webpush] send failed", status ?? err);
         }

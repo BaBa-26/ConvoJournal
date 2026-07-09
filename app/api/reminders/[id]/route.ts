@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { forUser } from "@/lib/prisma";
 import { requireAuth } from "@/lib/auth";
 import { ReminderUpdateSchema, validate } from "@/lib/validators";
 
-// Verify the reminder belongs to the authenticated user (prevents IDOR)
-async function ownedReminder(id: string, userId: string) {
-  return prisma.reminder.findFirst({ where: { id, userId } });
+// Verify the reminder belongs to the authenticated user (prevents IDOR). Uses the
+// RLS-scoped client so the row is only visible when app.user_id matches.
+async function ownedReminder(db: ReturnType<typeof forUser>, id: string, userId: string) {
+  return db.reminder.findFirst({ where: { id, userId } });
 }
 
 export async function PATCH(
@@ -14,16 +15,17 @@ export async function PATCH(
 ) {
   const auth = await requireAuth();
   if (auth instanceof NextResponse) return auth;
+  const db = forUser(auth.userId);
 
   try {
-    const reminder = await ownedReminder(params.id, auth.userId);
+    const reminder = await ownedReminder(db, params.id, auth.userId);
     if (!reminder) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
     const body = await req.json();
     const parsed = validate(ReminderUpdateSchema, body);
     if (!parsed.ok) return NextResponse.json(parsed.error, { status: 400 });
 
-    const updated = await prisma.reminder.update({
+    const updated = await db.reminder.update({
       where: { id: params.id },
       data: {
         ...(parsed.data.title       !== undefined && { title:       parsed.data.title }),
@@ -45,12 +47,13 @@ export async function DELETE(
 ) {
   const auth = await requireAuth();
   if (auth instanceof NextResponse) return auth;
+  const db = forUser(auth.userId);
 
   try {
-    const reminder = await ownedReminder(params.id, auth.userId);
+    const reminder = await ownedReminder(db, params.id, auth.userId);
     if (!reminder) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-    await prisma.reminder.delete({ where: { id: params.id } });
+    await db.reminder.delete({ where: { id: params.id } });
     return new NextResponse(null, { status: 204 });
   } catch (error) {
     if (process.env.NODE_ENV !== "production") console.error("[reminders DELETE]", error);

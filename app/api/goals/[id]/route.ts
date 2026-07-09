@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { forUser } from "@/lib/prisma";
 import { requireAuth } from "@/lib/auth";
 import { GoalUpdateSchema, validate } from "@/lib/validators";
 
-// Verify the goal belongs to the authenticated user (prevents IDOR)
-async function ownedGoal(id: string, userId: string) {
-  return prisma.goal.findFirst({ where: { id, userId } });
+// Verify the goal belongs to the authenticated user (prevents IDOR). Uses the
+// RLS-scoped client so the row is only visible when app.user_id matches.
+async function ownedGoal(db: ReturnType<typeof forUser>, id: string, userId: string) {
+  return db.goal.findFirst({ where: { id, userId } });
 }
 
 export async function PATCH(
@@ -14,9 +15,10 @@ export async function PATCH(
 ) {
   const auth = await requireAuth();
   if (auth instanceof NextResponse) return auth;
+  const db = forUser(auth.userId);
 
   try {
-    const goal = await ownedGoal(params.id, auth.userId);
+    const goal = await ownedGoal(db, params.id, auth.userId);
     if (!goal) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
     const body = await req.json();
@@ -59,19 +61,19 @@ export async function PATCH(
     const transitioned = willComplete !== goal.completed;
     if (transitioned) data.completedAt = willComplete ? new Date() : null;
 
-    const updated = await prisma.goal.update({ where: { id: params.id }, data });
+    const updated = await db.goal.update({ where: { id: params.id }, data });
 
     if (transitioned) {
       if (willComplete) {
-        await prisma.completion.create({
+        await db.completion.create({
           data: { kind: "goal", title: updated.title, completedAt: updated.completedAt ?? new Date(), userId: auth.userId },
         });
       } else {
-        const latest = await prisma.completion.findFirst({
+        const latest = await db.completion.findFirst({
           where: { userId: auth.userId, kind: "goal", title: updated.title },
           orderBy: { completedAt: "desc" },
         });
-        if (latest) await prisma.completion.delete({ where: { id: latest.id } });
+        if (latest) await db.completion.delete({ where: { id: latest.id } });
       }
     }
 
@@ -88,12 +90,13 @@ export async function DELETE(
 ) {
   const auth = await requireAuth();
   if (auth instanceof NextResponse) return auth;
+  const db = forUser(auth.userId);
 
   try {
-    const goal = await ownedGoal(params.id, auth.userId);
+    const goal = await ownedGoal(db, params.id, auth.userId);
     if (!goal) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-    await prisma.goal.delete({ where: { id: params.id } });
+    await db.goal.delete({ where: { id: params.id } });
     return new NextResponse(null, { status: 204 });
   } catch (error) {
     if (process.env.NODE_ENV !== "production") console.error("[goals DELETE]", error);

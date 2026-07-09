@@ -1,14 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { forUser } from "@/lib/prisma";
 import { requireAuth } from "@/lib/auth";
 import { GoalCreateSchema, validate } from "@/lib/validators";
 
 export async function GET() {
   const auth = await requireAuth();
   if (auth instanceof NextResponse) return auth;
+  const db = forUser(auth.userId);
 
   try {
-    const goals = await prisma.goal.findMany({
+    const goals = await db.goal.findMany({
       where:   { userId: auth.userId },
       orderBy: [{ completed: "asc" }, { createdAt: "desc" }],
     });
@@ -22,6 +23,7 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   const auth = await requireAuth();
   if (auth instanceof NextResponse) return auth;
+  const db = forUser(auth.userId);
 
   try {
     const body = await req.json();
@@ -31,7 +33,7 @@ export async function POST(req: NextRequest) {
     const { title, unit, target, current, step, period } = parsed.data;
     const cur = Math.min(current ?? 0, target);
 
-    const goal = await prisma.goal.create({
+    const goal = await db.goal.create({
       data: {
         title,
         unit,

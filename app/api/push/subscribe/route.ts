@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { prisma } from "@/lib/prisma";
+import { prisma, forUser } from "@/lib/prisma";
 import { requireAuth } from "@/lib/auth";
 import { validate } from "@/lib/validators";
 
@@ -22,8 +22,9 @@ export async function POST(req: NextRequest) {
   if (!parsed.ok) return NextResponse.json(parsed.error, { status: 400 });
 
   const { endpoint, p256dh, auth: authKey, timezone } = parsed.data;
+  const db = forUser(auth.userId);
 
-  await prisma.pushSubscription.upsert({
+  await db.pushSubscription.upsert({
     where: { endpoint },
     update: { userId: auth.userId, p256dh, auth: authKey },
     create: { endpoint, p256dh, auth: authKey, userId: auth.userId },

@@ -5,7 +5,7 @@ import { analyzeWithGemini } from "@/lib/gemini";
 import { detectCrisisSignals, mergeRisk, filterCrisisActionables } from "@/lib/crisis";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
+import { forUser } from "@/lib/prisma";
 import type { AnalysisResult } from "@/types";
 
 // Public endpoint — try-mode works unauthenticated; auth unlocks task dedup context
@@ -36,14 +36,15 @@ export async function POST(req: NextRequest) {
     } = { todayISO, pendingTaskTitles: [] };
     const session = await getServerSession(authOptions);
     if (session?.user?.id) {
+      const db = forUser(session.user.id);
       const [pending, goals] = await Promise.all([
-        prisma.task.findMany({
+        db.task.findMany({
           where:   { userId: session.user.id, completed: false },
           select:  { title: true },
           orderBy: { createdAt: "desc" },
           take:    25, // recent pending tasks are enough for dedup; caps prompt token cost
         }),
-        prisma.goal.findMany({
+        db.goal.findMany({
           where:   { userId: session.user.id, completed: false },
           select:  { id: true, title: true, unit: true, target: true, current: true },
           orderBy: { createdAt: "desc" },

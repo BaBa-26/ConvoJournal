@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { prismaAdmin } from "@/lib/prisma";
 import { sendPushToUser } from "@/lib/webpush";
 
 // Must run on Node (web-push uses Node crypto) and never be cached.
@@ -42,7 +42,7 @@ async function run() {
   // Reminders whose time has passed but haven't been sent. Bounded to the last 25h so the very
   // first run doesn't blast every old reminder that predates this feature.
   const windowStart = new Date(now.getTime() - 25 * 60 * 60 * 1000);
-  const dueReminders = await prisma.reminder.findMany({
+  const dueReminders = await prismaAdmin.reminder.findMany({
     where: { reminded: false, eventDate: { lte: now, gte: windowStart } },
     select: { id: true, title: true, userId: true },
   });
@@ -53,13 +53,13 @@ async function run() {
       url: "/schedule",
       tag: `reminder-${r.id}`,
     });
-    await prisma.reminder.update({ where: { id: r.id }, data: { reminded: true } });
+    await prismaAdmin.reminder.update({ where: { id: r.id }, data: { reminded: true } });
   }
 
   // ── 2. Daily goal nudge ───────────────────────────────────────────────────
   // Once per local day, at (or just after) the user's reminderTime, nudge anyone with an
   // unfinished goal. The 90-min catch-up window tolerates infrequent cron schedules.
-  const users = await prisma.user.findMany({
+  const users = await prismaAdmin.user.findMany({
     where: { reminderTime: { not: null }, timezone: { not: null } },
     select: { id: true, reminderTime: true, timezone: true, lastGoalNudge: true },
   });
@@ -78,7 +78,7 @@ async function run() {
       if (last && last.ymd === local.ymd) continue;
     }
 
-    const openGoals = await prisma.goal.count({ where: { userId: u.id, completed: false } });
+    const openGoals = await prismaAdmin.goal.count({ where: { userId: u.id, completed: false } });
     if (openGoals === 0) continue;
 
     goalPushes += await sendPushToUser(u.id, {
@@ -90,7 +90,7 @@ async function run() {
       url: "/tasks",
       tag: "goal-nudge",
     });
-    await prisma.user.update({ where: { id: u.id }, data: { lastGoalNudge: now } });
+    await prismaAdmin.user.update({ where: { id: u.id }, data: { lastGoalNudge: now } });
   }
 
   // ── 3. Cleanup: clear completed tasks/goals ~24h after completion ──────────
@@ -100,9 +100,9 @@ async function run() {
   const cleanupCutoff = new Date(now.getTime() - 24 * 60 * 60 * 1000);
   const completionCutoff = new Date(now.getTime() - 60 * 24 * 60 * 60 * 1000);
   const [tasksCleared, goalsCleared, completionsPruned] = await Promise.all([
-    prisma.task.deleteMany({ where: { completed: true, completedAt: { lt: cleanupCutoff } } }),
-    prisma.goal.deleteMany({ where: { completed: true, completedAt: { lt: cleanupCutoff } } }),
-    prisma.completion.deleteMany({ where: { completedAt: { lt: completionCutoff } } }),
+    prismaAdmin.task.deleteMany({ where: { completed: true, completedAt: { lt: cleanupCutoff } } }),
+    prismaAdmin.goal.deleteMany({ where: { completed: true, completedAt: { lt: cleanupCutoff } } }),
+    prismaAdmin.completion.deleteMany({ where: { completedAt: { lt: completionCutoff } } }),
   ]);
 
   return {

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { forUser } from "@/lib/prisma";
 import { requireAuth } from "@/lib/auth";
 
 // Count of tasks + goals the user completed since `since` (ISO, the client's local week start).
@@ -8,6 +8,7 @@ import { requireAuth } from "@/lib/auth";
 export async function GET(req: NextRequest) {
   const auth = await requireAuth();
   if (auth instanceof NextResponse) return auth;
+  const db = forUser(auth.userId);
 
   try {
     const params = new URL(req.url).searchParams;
@@ -18,7 +19,7 @@ export async function GET(req: NextRequest) {
       ? parsed
       : new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
-    const completedThisWeek = await prisma.completion.count({
+    const completedThisWeek = await db.completion.count({
       where: {
         userId: auth.userId,
         completedAt: { gte: since },
