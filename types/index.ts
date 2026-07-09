@@ -68,6 +68,9 @@ export interface ParsedEntry {
   reminders: ExtractedReminder[];
   goals?: ExtractedGoal[];        // brand-new goals to create from the entry
   goalUpdates?: GoalUpdate[];     // increments against the user's existing active goals
+  // Transient crisis signal (see lib/crisis.ts). Lives only in the in-flight
+  // /api/analyze response — never persisted to the DB or localStorage, never logged.
+  risk?: import("@/lib/crisis").RiskSignal;
 }
 
 export interface ExtractedGoal {

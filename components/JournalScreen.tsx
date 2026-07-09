@@ -9,6 +9,8 @@ import { buildAutocompleteEngine, type AutocompleteEngine } from "@/lib/autocomp
 import type { RecordingPhase, ParsedEntry, JournalEntry } from "@/types";
 import { loadLocal, appendLocalJournalEntry, loadPrivateVaultEntries } from "@/lib/localStore";
 import { useDataMode } from "@/components/PreferencesProvider";
+import { stripRisk } from "@/lib/crisis";
+import CrisisSupportCard from "@/components/CrisisSupportCard";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -500,6 +502,11 @@ function ReviewPhase({
 
   return (
     <div className="flex flex-col flex-1 gap-4 animate-slide-up overflow-y-auto pb-4">
+      {/* Crisis support (transient — never saved with the entry; see lib/crisis.ts) */}
+      {parsed.risk && parsed.risk.level !== "none" && (
+        <CrisisSupportCard risk={parsed.risk} />
+      )}
+
       {/* Mood badge */}
       {parsed.mood && (
         <div className="flex items-center gap-2">
@@ -898,19 +905,22 @@ export default function JournalScreen() {
     if (!activeContent) return;
     setSaving(true);
     try {
+      // Zero-retention: the crisis signal never leaves the review screen — strip it
+      // before ANY persistence (server POST, vault/demo localStorage).
+      const persistable = stripRisk(parsed ?? { tasks: [], reminders: [] });
       if (remote && keepPrivate) {
         // Sync mode, but the user chose to keep this one on-device only: write it to the vault
         // (flagged private) instead of the account. It surfaces read-only in history + Today.
-        appendLocalJournalEntry(activeContent, parsed ?? { tasks: [], reminders: [] }, true);
+        appendLocalJournalEntry(activeContent, persistable, true);
       } else if (remote) {
         await fetch("/api/journal", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ rawContent: activeContent, analysis: parsed ?? { tasks: [], reminders: [] } }),
+          body: JSON.stringify({ rawContent: activeContent, analysis: persistable }),
         });
       } else {
         // On-device mode (signed-in vault): persist the entry + its tasks/reminders/goals locally.
-        appendLocalJournalEntry(activeContent, parsed ?? { tasks: [], reminders: [] });
+        appendLocalJournalEntry(activeContent, persistable);
       }
       // Train the local autocomplete model on every saved entry
       getEngine().train(activeContent);
@@ -931,7 +941,9 @@ export default function JournalScreen() {
         "progress:pendingEntry",
         JSON.stringify({
           raw: activeContent,
-          analysis: parsed ?? { tasks: [], reminders: [] },
+          // stripRisk: the pending-entry stash persists across the OAuth round-trip —
+          // the crisis signal must not be written to localStorage (zero-retention).
+          analysis: stripRisk(parsed ?? { tasks: [], reminders: [] }),
           date: new Date().toISOString(),
         })
       );

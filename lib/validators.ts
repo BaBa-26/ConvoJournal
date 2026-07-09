@@ -78,6 +78,9 @@ export const JournalCreateSchema = z.object({
       goalId:    z.string().max(50),
       increment: z.number().int().min(1).max(100_000),
     })).max(20).optional(),
+    // NOTE: `risk` (crisis signal, lib/crisis.ts) is deliberately NOT accepted here.
+    // Zod strips unknown keys, so a client-sent risk field can never reach the DB —
+    // crisis assessments are zero-retention by design. Do not add it.
   }).optional(),
 });
 

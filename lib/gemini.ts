@@ -5,6 +5,7 @@ import {
   HarmBlockThreshold,
 } from "@google/genai";
 import type { AnalysisResult } from "@/types";
+import { sanitizeRisk } from "@/lib/crisis";
 
 interface ActiveGoal {
   id: string;
@@ -104,6 +105,21 @@ Emit into "goalUpdates" ONLY when the entry reports PROGRESS on a goal already i
   ✗ Do NOT invent a goalId. Use ONLY ids present in [Active Goals]. If nothing matches, emit no update.
   ✗ Do NOT emit an update for a FUTURE intention ("I'll go to the gym tomorrow") — only completed progress counts.
 
+[STEP 5 — CRISIS SIGNAL (safety, not extraction)]
+Independently of the extraction above, assess whether the entry contains high-risk content and emit "risk":
+  risk.flags — zero or more of EXACTLY these strings:
+    "self_harm" — self-harm or suicidal ideation (wanting to die, hurting oneself)
+    "abuse"     — the writer is being abused, assaulted, or threatened by someone
+    "violence"  — the writer expresses intent to seriously hurt someone else
+    "distress"  — acute psychological crisis (panic, breakdown, unable to cope)
+  risk.level — "crisis" for explicit/unambiguous indicators, "concern" for warning signs or
+  ambiguous phrasing, "none" otherwise. WHEN UNCERTAIN, USE "concern" — never guess "none".
+Rules:
+  - Use ONLY the four flag strings above — never invent categories.
+  - Ordinary sadness, stress, venting, or a bad day is NOT a crisis — level "none", no flags.
+  - Fiction, media references, or clearly hypothetical talk → at most "concern".
+  - This signal must NOT change the extraction: still fill the other fields normally.
+
 [GENERAL RULES]
 - Do NOT emit tasks/reminders semantically equivalent to anything in the provided pending list
 - Resolve all relative dates using todayISO
@@ -165,6 +181,14 @@ const RESPONSE_SCHEMA = {
         },
         required: ["goalId", "increment"],
       },
+    },
+    risk: {
+      type: Type.OBJECT,
+      properties: {
+        level: { type: Type.STRING },
+        flags: { type: Type.ARRAY, items: { type: Type.STRING } },
+      },
+      required: ["level"],
     },
   },
   required: ["tasks", "reminders"],
@@ -348,5 +372,8 @@ export async function analyzeWithGemini(
     reminders,
     goals,
     goalUpdates,
+    // Enum-coerced only — unknown levels/flags are dropped, so injected text can
+    // never reach the crisis UI (its copy is static, keyed off this enum).
+    risk: sanitizeRisk(raw.risk),
   };
 }

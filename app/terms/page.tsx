@@ -49,6 +49,17 @@ export default function TermsPage() {
           </p>
         </Section>
 
+        <Section title="5a. Not a medical or emergency service">
+          <p>
+            Progress is not a medical device, therapy, or crisis service. When an entry appears to describe a
+            difficult moment, the app may show links to third-party support resources (such as helplines).
+            These are informational only, may not fire or apply in every situation, and are not a substitute
+            for professional care. If you are in immediate danger, contact your local emergency number.
+            Crisis-related assessments are not stored — see the{" "}
+            <Link href="/privacy" className="text-gold hover:underline">Privacy Policy</Link>.
+          </p>
+        </Section>
+
         <Section title="6. Acceptable use">
           <p>
             Don&apos;t misuse the service, attempt to break or overload it, access others&apos; data, or use it

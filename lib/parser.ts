@@ -163,8 +163,11 @@ function extractTasks(text: string): ExtractedTask[] {
 
 // ── Reminder extraction ───────────────────────────────────────────────────────
 
+// "call" is only an event when used as a NOUN ("a call", "team call") — bare verb
+// use ("I need to call my sister tomorrow") is an intent, which the task extractor
+// already handles; matching it here produced duplicate junk reminders.
 const EVENT_NOUN_RE =
-  /\b(?:meeting|call|appointment|interview|doctor|dentist|lunch|dinner|breakfast|coffee|event|party|wedding|birthday|deadline|due date|flight|trip|session|class|demo|standup|review)\b/i;
+  /\b(?:meeting|(?:a|the|my|our|this|that|phone|conference|video|team|client)\s+call|appointment|interview|doctor|dentist|lunch|dinner|breakfast|coffee|event|party|wedding|birthday|deadline|due date|flight|trip|session|class|demo|standup|review)\b/i;
 
 // Events described as no longer happening must not become reminders.
 const CANCELLED_RE = /\b(cancel(?:l)?ed|reschedul(?:ed|ing)|moved|postponed|skipped|missed|called off)\b/i;

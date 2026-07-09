@@ -38,6 +38,13 @@ export default function PrivacyPage() {
             To provide the app: store and display your entries, transcribe your recordings, and generate
             structured insights (tasks, goals, reminders, mood) from what you write or say.
           </p>
+          <p className="mt-3">
+            <strong className="text-parchment-200">Support resources:</strong> as part of the same analysis,
+            the app checks whether an entry appears to describe a moment of crisis so it can show links to
+            free support resources. This assessment is transient — it is{" "}
+            <strong className="text-parchment-200">never stored</strong> in our database or on your device,
+            never attached to your entry or profile, and never used for analytics.
+          </p>
         </Section>
 
         <Section title="Third parties who process your data">
