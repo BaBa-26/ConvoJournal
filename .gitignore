@@ -46,3 +46,8 @@ whisper-service/__pycache__/
 
 #claude
 TAask.md
+# Claude skills live in the GLOBAL config (~/.claude/skills), not the repo
+.claude/skills/
+.agents/
+# Keep project-local Claude settings out of git too
+.claude/settings.local.json
