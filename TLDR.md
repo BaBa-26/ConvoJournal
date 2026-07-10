@@ -1,10 +1,34 @@
 # Progress (ConvoJournal) — Handoff Doc
 
-Last updated: 2026-07-09. **Read "🟢 Latest" directly below for current state.** Everything below it (starting "Latest (2026-07-07)") is now **shipped history** — kept for context, not active work.
+Last updated: 2026-07-10. **Read "🟢 Latest" directly below for current state.** Everything below it is **shipped history** — kept for context, not active work.
 
 ---
 
-## 🟢 Latest (2026-07-09, PM) — database-level Row-Level Security (RLS) shipped
+## 🟢 Latest (2026-07-10) — security audit + hardening shipped
+
+**Live in prod (`progress-coral-eight.vercel.app`), committed `c7bc8b2` on `claude/nifty-hamilton-ISukC`, pushed to origin.** A full security audit (using the Aikido "Operating Manual" reasoning method + the vibe-security skill) found the core data model already solid — RLS is real and fail-closed, every route re-checks `requireAuth()`, the unsubscribe endpoint is the *fixed* version of the classic NoSQL-injection example, no secrets in the repo. The findings and their fixes:
+
+**Shipped this session:**
+- **HIGH-2 (closed) — durable rate limiting.** The old limiter was an in-memory `Map`, which on Vercel is **per serverless instance** — an attacker rotating IPs/instances bypassed both the per-IP and the "global" AI cap and could exhaust the Gemini/Groq quota (availability DoS; money is already bounded by the Gemini spend cap + Groq free-tier hard-stop). Added an **Upstash Redis layer** (`@upstash/ratelimit`) on `/api/transcribe` + `/api/analyze` only: 5/min per IP + 200/hr global, enforced **globally across instances**. Runs after the cheap in-memory check, so only the two AI paths pay the ~200ms Redis round-trip. **Fail-open by design** (1s timeout): if Redis is unset/unreachable it falls back to in-memory — a Redis outage can never take the app down. Reads either `UPSTASH_REDIS_REST_*` or the `KV_REST_API_*` names Vercel's Marketplace integration injects. **Verified in prod:** 6th rapid call → 429.
+- **MEDIUM-1 (fixed) — the cross-account vault leak** (was bug #2 in the RLS session's deferred list). The real culprit was `VAULT_STORAGE_KEY` (`"progress:localVault"`), a single global localStorage key, so two accounts on the same browser (cloud-sync OFF) shared on-device data. Now namespaced per account via `vaultKey()` → `progress:localVault:<userId>` in `lib/localStore.ts` (+ `lib/syncMigration.ts` and `PreferencesProvider` passing `session.user.id`). A one-time migration adopts any pre-existing global vault into the first account to sign in, then deletes the shared key. (The `DEMO_STORAGE_KEY` is *not* a leak — it's ephemeral, pre-auth, reseeds daily.)
+- **MEDIUM-2 (fixed) — CSP dropped `'unsafe-eval'` in production** (`next.config.js`; dev keeps it for HMR). `'unsafe-inline'` stays until a nonce-based CSP lands. **Verified in prod:** header now `script-src 'self' 'unsafe-inline'`, page still 200.
+- **Cron hardening — constant-time `CRON_SECRET` compare** (`secureCompare` in `app/api/cron/notify/route.ts`) closes a timing side-channel.
+
+**Env var added to Vercel prod:** Upstash Redis via the **Marketplace integration** (injected as `KV_REST_API_URL` / `KV_REST_API_TOKEN` + friends). Neon's "Connect" button in Storage was **deliberately left unconnected** — the DB is wired manually with the three role-split URLs from the RLS work; the integration would try to manage `DATABASE_URL` itself.
+
+**Rate limiter naming note:** local `.env` uses `UPSTASH_REDIS_REST_*`; prod uses the integration's `KV_REST_API_*`. The middleware reads `UPSTASH_*` first, `KV_*` as fallback — both paths verified.
+
+### ⏳ Next steps
+1. **HIGH-1 (open, next session) — upgrade Next.js off 14.2.35.** `npm audit` reports 14 Next advisories (two XSS, one SSRF, RSC cache-poisoning, several DoS) + `postcss` XSS + `uuid` via `next-auth`. Fixes live only in newer majors, so this is a **breaking upgrade needing a real regression pass** (evaluate 15.x App-Router migration). Biggest remaining risk-reduction; mechanical but must be verified, not blind.
+2. **Two bugs still deferred from the RLS session** (see that section below): (a) "this device only" journal saves don't populate Tasks/Goals/Calendar; (c) crisis-support card overlaps the Discard/Save buttons on mobile (safety-critical flow — do first). Bug (b) — the vault leak — is now **fixed** (above).
+3. **Phase 3 — per-item notifications** (unchanged from prior plan): re-toggle the slider to re-subscribe (fixes the 403), then build Task/Reminder/Goal `notify` toggles + cron passes.
+4. **Optional follow-up on rate limiting:** skip the Redis check for authenticated requests (attackers can't mint session cookies) so your own use costs zero Redis commands — keeps the durable limits pointed only at the anonymous attack surface.
+
+**Before fully closing the CSP item:** click through the live app in a browser (record an entry, load Tasks/Goals/Schedule) to confirm dropping `'unsafe-eval'` didn't disturb any client behavior — the header + page-load checks passed, but a real click-through is the final confidence.
+
+---
+
+## Latest (2026-07-09, PM) — database-level Row-Level Security (RLS) shipped
 
 **Live in prod as of this session.** Every user-data table (`JournalEntry`, `Task`, `Reminder`, `Goal`, `Completion`, `PushSubscription`) now has Postgres RLS enabled with a `tenant_isolation` policy (`"userId" = current_setting('app.user_id', true)`). This is defense-in-depth: previously isolation depended 100% on every Prisma query remembering `where: { userId }`; now Postgres enforces it at the database layer even if a query forgets.
 
@@ -49,7 +73,7 @@ Last updated: 2026-07-09. **Read "🟢 Latest" directly below for current state.
 ### 🐛 Found during this session's manual testing (deferred to next session — none are RLS-related)
 All three surfaced while testing the branch build locally in "this device only" (localStorage) mode. RLS governs the *database*; local mode never touches it, so these need separate, unrelated fixes:
 1. **"This device only" journal saves don't populate Tasks/Goals/Calendar.** The journal save writes to `localStorage` in local mode, but those screens read from the server (`GET /api/tasks` etc.) unconditionally — save goes one place, the list screens read another. Pre-existing bug, not introduced this session.
-2. **Local (device-only) entries leak across accounts on the same browser/device.** `lib/demoData.ts`'s `DEMO_STORAGE_KEY` (`"progress-demo-state-v1"`) and `VAULT_STORAGE_KEY` (`"progress:localVault"`) are **fixed, not scoped per user** — every signed-in account on the same browser reads/writes the same localStorage blob. Real privacy bug; the fix is client-side (key the local store by `userId`, or wipe/reload it on account switch) — RLS cannot help here since this data never reaches the database.
+2. **Local (device-only) entries leak across accounts — ✅ FIXED 2026-07-10** (see the top "🟢 Latest" section). The vault key is now namespaced per account (`vaultKey()` → `progress:localVault:<userId>`). The demo key was never a leak (ephemeral, pre-auth, reseeds daily).
 3. **Mobile UI: crisis-support card overlaps action buttons.** When the self-harm/crisis detector fires, the mobile layout pushes the "keep on device" toggle underneath the Discard/Save buttons, making it hard to tap. This is in the safety-critical review flow (`components/CrisisSupportCard.tsx` + the journal review layout) — should be the first of these three to fix given it's user-safety-adjacent, not just a cosmetic bug.
 
 ### Also discussed, decided against (for context, don't re-litigate)
@@ -253,14 +277,15 @@ prisma/
 | IDOR | `ownedTask()` / `ownedReminder()` check before PATCH/DELETE → 404 not 403 (reminders fix pending deploy, see above) |
 | File uploads | 25 MB cap (Content-Length + blob.size), strict MIME allowlist → 413/415 |
 | Input validation | Zod on every POST/PATCH — enums, length caps, datetime format |
-| Rate limiting | In-memory sliding window: 5/min transcribe, 5/min analyze (both AI/billable), 60/min default, + 200/hr global AI cap across all IPs |
+| Rate limiting | Two layers (2026-07-10): in-memory sliding window (5/min transcribe, 5/min analyze, 60/min default) **+ durable Upstash Redis** on the two AI paths (5/min per IP + 200/hr global, enforced across serverless instances; fail-open). Backstop: Gemini spend cap + Groq free-tier hard-stop |
 | HTTP headers | CSP, X-Frame-Options, HSTS, nosniff, Referrer-Policy, Permissions-Policy |
 | Secrets | `.env`, `.vercel/`, `*.db` gitignored; never committed (verified via full git history search); no `NEXT_PUBLIC_` leakage |
 | Prompt injection | `[STRICT SECURITY RULE]` fence + phrase-based `INJECTION_RE`; `sanitizeField` (narrative) + `sanitizeTitle` (task/goal titles, strips fence tokens); prompt boundary re-asserted when transcript looks like an override |
 | Goals IDOR | `goalUpdates` accepted only for the user's own active-goal IDs (hallucinated IDs dropped); `/api/journal` re-checks ownership before incrementing |
-| Try-mode | `/api/transcribe` + `/api/analyze` public; saving requires auth. NOTE: `/api/analyze` is a public token-burn vector at scale — budget guard TBD |
+| Try-mode | `/api/transcribe` + `/api/analyze` public; saving requires auth. Token-burn now bounded by durable Upstash rate limiting + provider spend caps (see Rate limiting row) |
+| CSP | `'unsafe-eval'` dropped from `script-src` in production (2026-07-10); dev-only for HMR. `'unsafe-inline'` stays pending a nonce-based CSP |
 
-Full security audit run 2026-06-30 — only finding was the reminders IDOR (now fixed locally). No hardcoded secrets, no raw SQL, no `dangerouslySetInnerHTML`, errors don't leak internals to clients.
+Security audits: 2026-06-30 (found the reminders IDOR, since fixed) and **2026-07-10** (Aikido-method + vibe-security full audit — closed HIGH-2 rate limiting, MEDIUM-1 vault leak, MEDIUM-2 CSP, cron timing side-channel; **HIGH-1 Next.js dependency upgrade still open**). No hardcoded secrets, no raw SQL, the one `dangerouslySetInnerHTML` is a static constant (landing page CSS), errors don't leak internals to clients.
 
 ---
 
