@@ -23,6 +23,8 @@ Last updated: 2026-07-10. **Read "🟢 Latest" directly below for current state.
 2. **Two bugs still deferred from the RLS session** (see that section below): (a) "this device only" journal saves don't populate Tasks/Goals/Calendar; (c) crisis-support card overlaps the Discard/Save buttons on mobile (safety-critical flow — do first). Bug (b) — the vault leak — is now **fixed** (above).
 3. **Phase 3 — per-item notifications** (unchanged from prior plan): re-toggle the slider to re-subscribe (fixes the 403), then build Task/Reminder/Goal `notify` toggles + cron passes.
 4. **Optional follow-up on rate limiting:** skip the Redis check for authenticated requests (attackers can't mint session cookies) so your own use costs zero Redis commands — keeps the durable limits pointed only at the anonymous attack surface.
+5. add a specific timer feautere or notification option for reminders 
+6. thin kof flowsw of how didffernt user woudl use the app
 
 **Before fully closing the CSP item:** click through the live app in a browser (record an entry, load Tasks/Goals/Schedule) to confirm dropping `'unsafe-eval'` didn't disturb any client behavior — the header + page-load checks passed, but a real click-through is the final confidence.
 
