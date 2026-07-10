@@ -71,7 +71,7 @@ Completed tasks/goals hard-delete ~24h after completion (cron pass in `app/api/c
 `lib/demoData.ts` seeds `localStorage` (key: `progress-demo-state-v1`) with fake entries/tasks/reminders/goals. `JournalScreen`, `TasksScreen`, `ScheduleScreen`, and `RemindersScreen` read from localStorage when no session exists. Saving prompts "Sign in to save". Journal analysis can *create* demo goals but cannot auto-advance them (see above).
 
 ### Rate limiting
-`middleware.ts` uses an in-memory sliding window: 5 req/min on `/api/transcribe`, 20/min on `/api/analyze`, 60/min default. Rate limiting runs before auth checks.
+`middleware.ts` has two layers. (1) In-memory sliding window (per serverless instance): 5 req/min on `/api/transcribe`, 5/min on `/api/analyze`, 60/min default. (2) **Durable Upstash Redis layer** (cross-instance — the one that actually holds on Vercel) on the two billable AI paths only: 5/min per IP + 200/hour global. Fail-open by design: if `UPSTASH_REDIS_REST_URL`/`UPSTASH_REDIS_REST_TOKEN` are unset (local dev) or Redis errors, requests fall back to the in-memory layer; provider spend caps (Gemini cap set, Groq free tier hard-stops) bound the worst case. Rate limiting runs before auth checks.
 
 ### Push notifications (web-push)
 Service worker `public/sw.js` shows notifications from pushes. `lib/push.ts` (client) requests permission + subscribes; `lib/webpush.ts` (server) signs/sends with VAPID and prunes dead subs. Opt-in slider lives in `components/NotificationsSettings.tsx` on the Profile page. Routes: `app/api/push/{subscribe,unsubscribe,test}` + secret-guarded `app/api/cron/notify` (fires due reminders by `eventDate`, a once-daily goal nudge at each user's `reminderTime`/`timezone`, **and the completed-item cleanup pass**). Cron config in `vercel.json` (`0 9 * * *` — Hobby caps cron at once/day). Model `PushSubscription` + `User.timezone`/`lastGoalNudge` are migrated in prod. **VAPID + `CRON_SECRET` env vars ARE now set in prod (2 days ago), but delivery fails with a `403` — the existing subscription was created against a VAPID public key that no longer pairs with the current private key.** Fix (Phase 3, next session): re-toggle the slider to re-subscribe, then "Send test" (bypasses the cron). Per-item "notify me" toggles on task/reminder/goal are **not yet built** — that's Phase 3. `enablePush` requests permission *before* the VAPID check, so the browser prompt shows on the first slider click.
@@ -125,6 +125,11 @@ NEXTAUTH_URL=           # http://localhost:3000 (dev) / https://... (prod)
 GOOGLE_CLIENT_ID=       # from Google Cloud Console
 GOOGLE_CLIENT_SECRET=   # from Google Cloud Console
 GEMINI_API_KEY=         # from Google AI Studio (aistudio.google.com) — AI Studio key, not Vertex AI
+
+# Durable rate limiting (optional but recommended in prod) — Upstash Redis free tier.
+# Unset = middleware falls back to per-instance in-memory limits only (fail-open).
+UPSTASH_REDIS_REST_URL=    # from console.upstash.com or the Vercel Marketplace integration
+UPSTASH_REDIS_REST_TOKEN=  # (secret) same place
 
 # Push notifications — SET in prod (2 days ago). Delivery currently 403s (stale subscription vs current keys — see Gotchas).
 # If regenerated, the public/private pair must match AND NEXT_PUBLIC_VAPID_PUBLIC_KEY must equal VAPID_PUBLIC_KEY, then redeploy (NEXT_PUBLIC is build-time inlined).

@@ -64,7 +64,7 @@ export function useDataMode(): DataMode {
 }
 
 export default function PreferencesProvider({ children }: { children: React.ReactNode }) {
-  const { status } = useSession();
+  const { status, data: session } = useSession();
   const [saved, setSaved] = useState<UserPreferences>(DEFAULT_PREFERENCES); // last persisted
   const [draft, setDraft] = useState<Partial<UserPreferences> | null>(null); // unsaved overrides
   const [loaded, setLoaded] = useState(false);
@@ -77,7 +77,12 @@ export default function PreferencesProvider({ children }: { children: React.Reac
   // effects (which run before this parent's effects on mount) read the correct backing store:
   // signed-in local data always lives in the persistent vault; signed-out uses the ephemeral
   // demo store. (storageMode doesn't affect *which* local store — only whether we read local at all.)
-  setActiveLocalKind(status === "authenticated" ? "vault" : "demo");
+  // Pass the account id so the vault key is namespaced per user (prevents cross-account
+  // on-device data leaks when two accounts share a browser).
+  setActiveLocalKind(
+    status === "authenticated" ? "vault" : "demo",
+    status === "authenticated" ? session?.user?.id ?? null : null,
+  );
 
   // Resolved data source the app reads/writes: remote only when signed in AND syncing.
   const dataMode: DataMode = status === "authenticated" && storageMode === "sync" ? "remote" : "local";

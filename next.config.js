@@ -18,8 +18,10 @@ const nextConfig = {
             key: "Content-Security-Policy",
             value: [
               "default-src 'self'",
-              // Next.js requires unsafe-inline/eval in dev; scope tighter in prod if possible
-              "script-src 'self' 'unsafe-eval' 'unsafe-inline'",
+              // 'unsafe-eval' is only needed for the dev HMR/React-refresh runtime — drop it in
+              // prod so an injected inline <script> can't eval(). ('unsafe-inline' stays until a
+              // nonce-based CSP lands; Next's bootstrap inline scripts need it without nonces.)
+              `script-src 'self' 'unsafe-inline'${process.env.NODE_ENV !== "production" ? " 'unsafe-eval'" : ""}`,
               "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
               "font-src 'self' https://fonts.gstatic.com",
               "img-src 'self' data: https:",          // https: for Google avatar images

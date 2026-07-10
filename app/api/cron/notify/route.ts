@@ -1,10 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prismaAdmin } from "@/lib/prisma";
 import { sendPushToUser } from "@/lib/webpush";
+import crypto from "node:crypto";
 
 // Must run on Node (web-push uses Node crypto) and never be cached.
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+// Constant-time compare so a timing side-channel can't leak CRON_SECRET one character at a time.
+// Hashing first sidesteps timingSafeEqual's equal-length requirement (arbitrary-length input →
+// fixed-length digest) without weakening the comparison.
+function secureCompare(a: string, b: string): boolean {
+  const digestA = crypto.createHash("sha256").update(a).digest();
+  const digestB = crypto.createHash("sha256").update(b).digest();
+  return crypto.timingSafeEqual(digestA, digestB);
+}
 
 // Only Vercel Cron (which sends `Authorization: Bearer <CRON_SECRET>`) or an external pinger
 // with the same secret (as a header or ?key=) may trigger this — otherwise anyone could spam
@@ -12,8 +22,11 @@ export const dynamic = "force-dynamic";
 function authorized(req: NextRequest): boolean {
   const secret = process.env.CRON_SECRET;
   if (!secret) return false;
-  if (req.headers.get("authorization") === `Bearer ${secret}`) return true;
-  return new URL(req.url).searchParams.get("key") === secret;
+  const authHeader = req.headers.get("authorization");
+  if (authHeader && secureCompare(authHeader, `Bearer ${secret}`)) return true;
+  const key = new URL(req.url).searchParams.get("key");
+  if (!key) return false;
+  return secureCompare(key, secret);
 }
 
 // Hour/minute/date for a Date in a given IANA timezone, using only the built-in Intl API.

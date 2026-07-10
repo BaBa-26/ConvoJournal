@@ -1,11 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
+import { Ratelimit } from "@upstash/ratelimit";
+import { Redis } from "@upstash/redis";
 
-// ─── In-memory rate limiter ────────────────────────────────────────────────────
+// ─── In-memory rate limiter (first layer, all API routes) ─────────────────────
 // Sliding-window counter per IP.
 // NOTE: On Vercel serverless each function instance has its own Map — this limiter
-// is per-instance, not global. It is still effective against single-IP bursts on
-// the same instance. For hard global limits, set a spending cap in Google AI Studio
-// and Groq dashboard directly.
+// is per-instance, not global. It stops naive single-tab bursts for free; the two
+// billable AI paths additionally go through the durable Upstash limiter below,
+// which IS global across instances. Provider spend caps (Google AI Studio /
+// Groq free tier) remain the final backstop.
 
 interface RateWindow {
   count:       number;
@@ -53,6 +56,58 @@ function checkRateLimit(ip: string, path: string): boolean {
   return win.count <= rule.max;
 }
 
+// ─── Durable (cross-instance) limiter for the billable AI paths ───────────────
+// Upstash Redis over REST — edge-compatible, shared by every serverless instance,
+// so the caps below are actually global (the in-memory Map above is per-instance).
+// Only /api/transcribe and /api/analyze pay the ~10-30ms Redis round-trip.
+//
+// Fail-open by design: if UPSTASH_* env vars are unset (local dev) or Redis is
+// unreachable, we fall back to the in-memory layer instead of taking the app down —
+// the provider spend caps still bound the worst case.
+// The Vercel Marketplace integration injects KV_REST_API_* names; a manually-created
+// Upstash database uses UPSTASH_REDIS_REST_* — accept either.
+const redisUrl =
+  process.env.UPSTASH_REDIS_REST_URL ?? process.env.KV_REST_API_URL ?? "";
+const redisToken =
+  process.env.UPSTASH_REDIS_REST_TOKEN ?? process.env.KV_REST_API_TOKEN ?? "";
+
+const redis = redisUrl && redisToken ? new Redis({ url: redisUrl, token: redisToken }) : null;
+
+// Per-IP: same 5/min as the in-memory rule, but enforced globally.
+const aiIpLimiter = redis
+  ? new Ratelimit({
+      redis,
+      limiter: Ratelimit.slidingWindow(5, "60 s"),
+      prefix: "rl:ai:ip",
+      timeout: 1000, // slow Redis fails open (counts as success) instead of stalling the request
+    })
+  : null;
+
+// Global: 200 AI calls/hour across ALL IPs and instances (quota-exhaustion guard).
+const aiGlobalLimiter = redis
+  ? new Ratelimit({
+      redis,
+      limiter: Ratelimit.slidingWindow(GLOBAL_AI_HOURLY_MAX, "3600 s"),
+      prefix: "rl:ai:global",
+      timeout: 1000,
+    })
+  : null;
+
+async function checkDurableAiLimit(ip: string, path: string): Promise<boolean> {
+  if (!AI_PATHS.has(path) || !aiIpLimiter || !aiGlobalLimiter) return true;
+  try {
+    const [perIp, global] = await Promise.all([
+      aiIpLimiter.limit(`${ip}:${path}`),
+      aiGlobalLimiter.limit("all"),
+    ]);
+    return perIp.success && global.success;
+  } catch (err) {
+    // Redis down ≠ app down. The in-memory layer already ran; let the request through.
+    console.error("[ratelimit] Upstash check failed — falling back to in-memory only", err);
+    return true;
+  }
+}
+
 // ─── Security headers added to every response ─────────────────────────────────
 
 function applySecurityHeaders(res: NextResponse): NextResponse {
@@ -66,7 +121,7 @@ function applySecurityHeaders(res: NextResponse): NextResponse {
 
 // ─── Middleware ────────────────────────────────────────────────────────────────
 
-export function middleware(req: NextRequest) {
+export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
   // Determine client IP (Vercel / standard headers)
@@ -79,7 +134,10 @@ export function middleware(req: NextRequest) {
   if (pathname.startsWith("/api/") && pathname !== "/api/auth") {
     const perIpOk  = checkRateLimit(ip, pathname);
     const globalOk = checkGlobalAiCap(pathname);
-    if (!perIpOk || !globalOk) {
+    // Cheap in-memory checks first; only when they pass (and only for the two AI
+    // paths) pay the Redis round-trip for the durable cross-instance check.
+    const durableOk = perIpOk && globalOk ? await checkDurableAiLimit(ip, pathname) : false;
+    if (!perIpOk || !globalOk || !durableOk) {
       return applySecurityHeaders(
         new NextResponse(JSON.stringify({ error: "Too many requests" }), {
           status:  429,

@@ -1,6 +1,5 @@
 import {
   DEMO_STORAGE_KEY,
-  VAULT_STORAGE_KEY,
   loadStateFromKey,
   saveStateToKey,
   createDemoState,
@@ -9,6 +8,7 @@ import {
   exportToState,
   type DemoState,
 } from "@/lib/demoData";
+import { vaultKey } from "@/lib/localStore";
 
 // Client-side migration between the on-device stores and the account. The demo store (ephemeral
 // try mode) and the vault (signed-in local) are handled explicitly rather than via the "active"
@@ -34,7 +34,7 @@ export function demoStoreHasData(): boolean {
 }
 
 export function vaultHasData(): boolean {
-  return hasData(VAULT_STORAGE_KEY, false);
+  return hasData(vaultKey(), false);
 }
 
 // Upload the ephemeral try-mode (demo) store into the account, then clear it. Used when a
@@ -48,9 +48,9 @@ export async function uploadDemoStoreToAccount(): Promise<boolean> {
 
 // Upload the persistent vault into the account, then clear it. Used when turning cloud sync ON.
 export async function uploadVaultToAccount(): Promise<boolean> {
-  const state = loadStateFromKey(VAULT_STORAGE_KEY, false);
+  const state = loadStateFromKey(vaultKey(), false);
   const ok = await uploadState(state);
-  if (ok) saveStateToKey(VAULT_STORAGE_KEY, createDemoState());
+  if (ok) saveStateToKey(vaultKey(), createDemoState());
   return ok;
 }
 
@@ -60,6 +60,6 @@ export async function downloadAccountToVault(): Promise<boolean> {
   const res = await fetch("/api/user/export");
   if (!res.ok) return false;
   const payload = await res.json();
-  saveStateToKey(VAULT_STORAGE_KEY, exportToState(payload));
+  saveStateToKey(vaultKey(), exportToState(payload));
   return true;
 }
