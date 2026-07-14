@@ -156,7 +156,7 @@ export default function WritingPhase({
           disabled={!hasText}
           className="btn-primary flex-1"
         >
-          Make sense of it
+          Structure it
         </button>
       </div>
     </div>

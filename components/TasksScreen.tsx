@@ -454,20 +454,14 @@ export default function TasksScreen() {
           )}
         </div>
 
-        {/* Goals / Tasks switcher */}
-        <div className="mt-4 flex gap-1.5 bg-ink-900 rounded-xl p-1">
+        {/* Goals / Tasks switcher — the system segmented control (§6.8) */}
+        <div className="seg mt-4">
           {(["goals", "tasks"] as TabKey[]).map((t) => (
             <button
               key={t}
               onClick={() => setTab(t)}
-              className={`
-                flex-1 py-2 rounded-lg text-[10px] font-mono uppercase tracking-widest
-                transition-all duration-150 min-h-[38px]
-                ${tab === t
-                  ? "bg-ink-700 text-parchment-200 shadow-sm"
-                  : "text-parchment-700 hover:text-parchment-500"
-                }
-              `}
+              aria-pressed={tab === t}
+              className={`seg-item min-h-[44px] ${tab === t ? "seg-item-active" : ""}`}
             >
               {t}
             </button>

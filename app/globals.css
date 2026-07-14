@@ -219,6 +219,21 @@
     -webkit-backdrop-filter: blur(14px);
   }
 
+  /* Scrim under the floating mobile nav (design-system §3/§6.12) — content scrolling
+     beneath the pill fades out instead of staying fully legible around it. Dropped
+     when a wallpaper is active (the blurred pill carries its own separation there). */
+  .nav-scrim {
+    background: linear-gradient(
+      to top,
+      rgb(var(--ink-950) / 0.92) 0%,
+      rgb(var(--ink-950) / 0.55) 55%,
+      rgb(var(--ink-950) / 0) 100%
+    );
+  }
+  html[data-has-bg="true"] .nav-scrim {
+    background: none;
+  }
+
   /* ─── Cards (design-system §6.3) ───────────────────────── */
   .card {
     @apply bg-ink-900 border border-ink-700 rounded-2xl p-4;

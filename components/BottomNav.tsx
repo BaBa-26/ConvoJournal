@@ -41,6 +41,8 @@ export default function BottomNav() {
   return (
     // Full-width fixed shell is click-through; only the centered pill captures taps.
     <nav className="md:hidden fixed inset-x-0 bottom-0 z-50 pb-safe pointer-events-none">
+      {/* Fade-out scrim so scrolled content quiets under the pill (§6.12) */}
+      <div aria-hidden className="nav-scrim absolute inset-x-0 -top-6 bottom-0 pointer-events-none" />
       <div
         className="pointer-events-auto mx-auto mb-3 w-fit max-w-[calc(100%-1.5rem)]
                    flex items-center gap-1 rounded-full p-1.5

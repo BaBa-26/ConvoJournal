@@ -137,7 +137,7 @@ export function WeeklyStats({
   const row = (
     <div className="grid grid-cols-3 gap-2.5">
       {[
-        { num: stats.entries, lbl: "Entries" },
+        { num: stats.entries, lbl: stats.entries === 1 ? "Entry" : "Entries" },
         { num: stats.done, lbl: "Done" },
         { num: stats.pending, lbl: "Pending" },
       ].map((s) => (

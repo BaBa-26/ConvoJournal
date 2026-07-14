@@ -379,7 +379,7 @@ export default function JournalScreen() {
   const voiceFlowDots: JournalPhase[] = ["recording", "analyzing", "review"];
 
   return (
-    <div className="flex flex-col flex-1 overflow-hidden animate-fade-in">
+    <div className="flex flex-col flex-1 md:overflow-hidden animate-fade-in">
       {/* ── Header ─────────────────────────────────────── */}
       <header className="flex items-center justify-between px-5 pt-safe pt-5 pb-4 flex-shrink-0">
         <div>
@@ -397,7 +397,7 @@ export default function JournalScreen() {
         </div>
         {/* Voice-flow progress dots */}
         {voiceFlowDots.includes(phase) && (
-          <div aria-hidden className="flex gap-1.5 mr-12 md:mr-0">
+          <div aria-hidden className="flex gap-1.5 mr-14 md:mr-0">
             {voiceFlowDots.map((p) => (
               <span
                 key={p}
@@ -411,7 +411,7 @@ export default function JournalScreen() {
       </header>
 
       {/* ── Content ────────────────────────────────────── */}
-      <div className="flex-1 overflow-y-auto px-5 flex flex-col">
+      <div className="flex-1 md:overflow-y-auto px-5 flex flex-col">
         {idleBanner && phase === "idle" && !micDenied && (
           <div className="banner-error mb-4" role="alert">
             <span className="flex-1">{idleBanner}</span>

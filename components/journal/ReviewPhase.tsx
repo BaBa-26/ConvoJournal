@@ -145,7 +145,7 @@ export default function ReviewPhase({
     onUpdate({ ...parsed, goals: (parsed.goals ?? []).filter((_, j) => j !== i) });
 
   return (
-    <div className="flex flex-col flex-1 gap-4 overflow-y-auto pb-nav">
+    <div className="flex flex-col flex-1 gap-4 pb-nav">
       {/* Crisis support — always first, never overlapped (§6.14) */}
       {parsed.risk && parsed.risk.level !== "none" && <CrisisSupportCard risk={parsed.risk} />}
 
