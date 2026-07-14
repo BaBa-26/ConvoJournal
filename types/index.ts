@@ -72,6 +72,21 @@ export interface JournalEntry {
   // Client-only: entry is kept on this device (vault) and never synced to the server.
   // Not a DB column — only set on local/vault entries.
   private?: boolean;
+  // Client-only for now: photos/files attached to the entry. Stored on-device
+  // (data URLs) until server blob storage is provisioned — see docs/design-system.md §6.11.
+  attachments?: Attachment[];
+}
+
+// An attached photo or file. Local persistence keeps the (downscaled) content as a
+// data URL; the future server contract swaps dataUrl for { url, thumbUrl } from
+// POST /api/attachments while the rest of the shape stays identical.
+export interface Attachment {
+  id: string;
+  name: string;
+  mime: string;
+  size: number;          // bytes (post-processing)
+  kind: "image" | "file";
+  dataUrl: string;
 }
 
 // ─── Parser / AI output shape ─────────────────────────────────────────────────

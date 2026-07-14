@@ -18,6 +18,10 @@
   --accent: 200 168 120;
   --accent-light: 216 188 152;
   --accent-dark: 168 136 88;
+  --accent-deep: 111 88 54;
+  /* Accent-colored TEXT on surfaces: base accent in dark mode, the text-safe deep
+     shade in light mode (base accent on cream fails contrast). */
+  --accent-ink: var(--accent);
   --type-scale: 1;
 
   /* Fixed dark text for placing on the accent/gold — never flips (keeps contrast in light mode). */
@@ -39,6 +43,22 @@
   --parchment-600: 138 122 104;  /* #8a7a68 */
   --parchment-700: 106 90 74;    /* #6a5a4a */
   --parchment-800: 74 60 46;     /* #4a3c2e */
+
+  /* Time tints (design-system §1.4) — warm-family Yesterday/Today/Tomorrow.
+     Hue channels are mode-independent; the label shade flips for light mode. */
+  --tint-past: 165 131 160;        /* plum-ash */
+  --tint-past-label: 201 162 194;
+  --tint-now: 207 128 84;          /* ember */
+  --tint-now-label: 224 166 120;
+  --tint-next: 122 154 122;        /* moss */
+  --tint-next-label: 164 194 164;
+
+  /* Motion tokens (design-system §4) */
+  --dur-quick: 120ms;
+  --dur-gentle: 240ms;
+  --dur-calm: 400ms;
+  --dur-payoff: 700ms;
+  --ease-calm: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 /* Light mode — applies app-wide (data-color-mode="light" is set on <html>). */
@@ -67,6 +87,14 @@
   --parchment-600: 122 111 92;
   --parchment-700: 148 136 111;
   --parchment-800: 168 154 126;
+
+  /* Time-tint labels darken for cream surfaces */
+  --tint-past-label: 125 88 120;
+  --tint-now-label: 157 90 48;
+  --tint-next-label: 78 112 80;
+
+  /* Accent text flips to its per-preset deep shade for contrast on cream */
+  --accent-ink: var(--accent-deep);
 }
 
 @layer base {
@@ -95,51 +123,175 @@
     -webkit-box-shadow: 0 0 0 100px rgb(var(--ink-900)) inset;
     -webkit-text-fill-color: rgb(var(--parchment-200));
   }
+
+  /* ── Focus (design-system §5) — keyboard users always get a visible ring.
+     !important beats stray `focus:outline-none` utilities; mouse/touch stay clean. */
+  :focus-visible {
+    outline: 2px solid rgb(var(--accent) / 0.7) !important;
+    outline-offset: 2px;
+  }
+  /* Form fields carry their own visible focus (accent border + ring in .input) */
+  input:focus-visible,
+  textarea:focus-visible,
+  select:focus-visible {
+    outline: none !important;
+  }
+
+  /* ── Reduced motion (design-system §4) — entrances collapse to opacity,
+     ambient loops stop. No component opts out. */
+  @media (prefers-reduced-motion: reduce) {
+    .animate-fade-in,
+    .animate-slide-up,
+    .animate-rise {
+      animation-duration: 1ms !important;
+      animation-delay: 0ms !important;
+    }
+    .animate-breathe,
+    .animate-pulse-ring,
+    [class*="animate-wave"] {
+      animation: none !important;
+    }
+  }
 }
 
 @layer components {
-  /* ─── Buttons ─────────────────────────────────────────── */
+  /* ─── Buttons (design-system §6.1) ────────────────────── */
   .btn-primary {
     @apply bg-accent text-onaccent px-5 py-3 rounded-xl font-mono text-sm font-medium
-           tracking-wide transition-all duration-150
-           active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed
+           tracking-wide transition-all duration-quick
+           hover:bg-accent-light active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed
            min-h-[44px] flex items-center justify-center gap-2;
   }
   .btn-ghost {
     @apply bg-ink-800 text-parchment-400 px-5 py-3 rounded-xl font-mono text-sm
-           border border-ink-600 tracking-wide transition-all duration-150
-           hover:bg-ink-700 active:scale-95 disabled:opacity-40
+           border border-ink-600 tracking-wide transition-all duration-quick
+           hover:bg-ink-700 hover:text-parchment-200 active:scale-[0.98] disabled:opacity-40
            min-h-[44px] flex items-center justify-center gap-2;
   }
-
-  /* Sticky form footer — transparent so the buttons float smoothly over the page/wallpaper
-     instead of sitting in an opaque box. On mobile it lifts above the floating nav pill. */
-  .action-bar {
-    @apply sticky bottom-[4.75rem] md:bottom-0 z-10 flex gap-3 pt-4 pb-2;
+  /* Tertiary text button — "← back", "show transcript", quiet links. Full 44px hit. */
+  .btn-quiet {
+    @apply text-parchment-500 font-mono text-body tracking-wide px-3 py-2 rounded-lg
+           transition-colors duration-quick hover:text-parchment-300
+           active:scale-[0.98] disabled:opacity-40
+           min-h-[44px] inline-flex items-center justify-center gap-2;
+  }
+  /* Destructive — discard-with-content, delete confirms. Same red as priority-high. */
+  .btn-danger {
+    @apply bg-priority-high/10 text-priority-high border border-priority-high/40
+           px-5 py-3 rounded-xl font-mono text-sm tracking-wide
+           transition-all duration-quick hover:bg-priority-high/20
+           active:scale-[0.98] disabled:opacity-40
+           min-h-[44px] flex items-center justify-center gap-2;
+  }
+  /* 44×44 icon button — glyphs inherit currentColor. */
+  .icon-btn {
+    @apply w-11 h-11 rounded-xl bg-ink-800 border border-ink-700 flex-shrink-0
+           flex items-center justify-center text-parchment-500
+           transition-all duration-quick
+           hover:border-ink-600 hover:text-parchment-200 active:scale-95 disabled:opacity-40;
+  }
+  .icon-btn-accent {
+    @apply icon-btn bg-accent/10 border-accent/30 text-accent-ink
+           hover:bg-accent/20 hover:border-accent/50 hover:text-accent-ink;
+  }
+  /* Trailing row action (edit/delete on list rows) — quiet glyph, full 44px hit. */
+  .row-action {
+    @apply w-11 h-11 flex-shrink-0 flex items-center justify-center rounded-lg
+           text-parchment-600 transition-colors duration-quick
+           hover:text-parchment-300 active:scale-95;
   }
 
-  /* ─── Cards ────────────────────────────────────────────── */
+  /* Sticky form footer (design-system §6.5). Carries a scrim so content can never be
+     read through the controls; switches to blur when a wallpaper is active.
+     On mobile it lifts above the floating nav pill. */
+  .action-bar {
+    @apply sticky bottom-[4.75rem] md:bottom-0 z-10 flex gap-3 pt-6 pb-2 -mx-5 px-5;
+    background: linear-gradient(
+      to top,
+      rgb(var(--ink-950)) 0%,
+      rgb(var(--ink-950) / 0.92) 60%,
+      rgb(var(--ink-950) / 0) 100%
+    );
+  }
+  html[data-has-bg="true"] .action-bar {
+    background: hsl(var(--background) / 0.55);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+  }
+
+  /* ─── Cards (design-system §6.3) ───────────────────────── */
   .card {
     @apply bg-ink-900 border border-ink-700 rounded-2xl p-4;
   }
   .card-tight {
     @apply bg-ink-900 border border-ink-700 rounded-xl p-3;
   }
+  /* Tappable card — entry rows, quick links. */
+  .card-interactive {
+    @apply card text-left transition-all duration-quick cursor-pointer
+           hover:border-ink-600 active:scale-[0.99];
+  }
 
   /* ─── Labels ───────────────────────────────────────────── */
   .label {
-    @apply text-[10px] font-mono uppercase tracking-[0.2em] text-parchment-600;
+    @apply text-label font-mono uppercase text-parchment-600;
   }
 
-  /* ─── Inputs ───────────────────────────────────────────── */
+  /* ─── Inputs & fields (design-system §6.2) ─────────────── */
   .input {
     @apply w-full bg-ink-800 border border-ink-600 rounded-xl px-4 py-3
            text-sm text-parchment-200 placeholder-parchment-700 font-mono
-           focus:outline-none focus:border-accent/60 focus:ring-1 focus:ring-accent/30
-           transition-all duration-150 min-h-[44px];
+           focus:border-accent/60 focus:ring-1 focus:ring-accent/30
+           transition-all duration-quick min-h-[44px];
   }
   .textarea {
     @apply input resize-none;
+  }
+  .input-error {
+    @apply border-priority-high/50 focus:border-priority-high/60 focus:ring-priority-high/20;
+  }
+  .field-hint {
+    @apply text-meta font-mono text-parchment-700 mt-1.5;
+  }
+  .field-error {
+    @apply text-meta font-mono text-priority-high mt-1.5;
+  }
+
+  /* ─── Chips & pills (design-system §6.8) ───────────────── */
+  /* Mood pill — the entry speaking: Voice italic, accent-tinted. */
+  .pill-mood {
+    @apply inline-flex items-center gap-1.5 px-3 py-1 rounded-full
+           bg-accent/10 border border-accent/25
+           font-display italic text-[13px] text-accent-ink tracking-wide;
+  }
+  .chip {
+    @apply flex-shrink-0 px-3 py-1.5 rounded-full bg-ink-800 border border-ink-600
+           font-mono text-meta text-parchment-400 transition-all duration-quick
+           hover:border-parchment-700/50 hover:text-parchment-300 active:scale-95;
+  }
+  .badge-count {
+    @apply font-mono text-label leading-none px-1.5 py-1 rounded-full
+           bg-accent/15 text-accent-ink border border-accent/25;
+  }
+
+  /* ─── Segmented control (design-system §6.8) ───────────── */
+  .seg {
+    @apply flex bg-ink-900 border border-ink-700 rounded-xl p-1 gap-1;
+  }
+  .seg-item {
+    @apply flex-1 min-h-[36px] rounded-lg font-mono text-meta uppercase tracking-[0.15em]
+           text-parchment-600 flex items-center justify-center gap-1.5
+           transition-all duration-quick hover:text-parchment-400;
+  }
+  .seg-item-active {
+    @apply bg-accent text-onaccent hover:text-onaccent;
+  }
+
+  /* ─── Banners (design-system §6.13) ────────────────────── */
+  .banner-error {
+    @apply flex items-start gap-3 px-4 py-3 rounded-xl
+           bg-priority-high/10 border border-priority-high/30
+           font-mono text-body text-priority-high;
   }
 
   /* ─── Section divider ──────────────────────────────────── */

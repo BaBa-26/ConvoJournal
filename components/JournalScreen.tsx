@@ -1,856 +1,111 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef, useMemo } from "react";
-import { format, parseISO } from "date-fns";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { format } from "date-fns";
 import { useSession, signIn } from "next-auth/react";
-import Waveform from "./Waveform";
+import Link from "next/link";
 import { useRecorder } from "@/hooks/useRecorder";
 import { buildAutocompleteEngine, type AutocompleteEngine } from "@/lib/autocomplete";
-import type { RecordingPhase, ParsedEntry, JournalEntry } from "@/types";
-import { loadLocal, appendLocalJournalEntry, loadPrivateVaultEntries } from "@/lib/localStore";
+import type { RecordingPhase as JournalPhase, ParsedEntry, JournalEntry, Attachment } from "@/types";
+import {
+  loadLocal,
+  appendLocalJournalEntry,
+  loadPrivateVaultEntries,
+  activeLocalAccountId,
+} from "@/lib/localStore";
+import {
+  saveEntryAttachmentsOverlay,
+  loadEntryAttachmentsOverlay,
+} from "@/lib/attachments";
 import { useDataMode } from "@/components/PreferencesProvider";
-import { stripRisk } from "@/lib/crisis";
+import { stripRisk, detectCrisisSignals, type RiskSignal } from "@/lib/crisis";
 import CrisisSupportCard from "@/components/CrisisSupportCard";
+import IdlePhase from "@/components/journal/IdlePhase";
+import WritingPhase from "@/components/journal/WritingPhase";
+import RecordingPhase from "@/components/journal/RecordingPhase";
+import AnalyzingPhase from "@/components/journal/AnalyzingPhase";
+import ReviewPhase from "@/components/journal/ReviewPhase";
+import EntriesList from "@/components/journal/EntriesList";
+import EntryDetail from "@/components/journal/EntryDetail";
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
+// The journal state machine (design-system §7). Presentation lives in
+// components/journal/*; this component owns phases, persistence, and recovery:
+//   idle → recording → analyzing → review → saved      (voice)
+//   idle → writing → analyzing → review → saved        (typed, analysed)
+//   idle → writing → saved                             (typed, saved as-is / plain)
+//   review can flip structured ⇄ plain before saving   (voice plain entries)
+// Failure never strands the user: mic-denied renders a designed idle variant, and
+// analysis failure returns their words to the writing surface with both exits.
 
-function formatElapsed(s: number): string {
-  const m = Math.floor(s / 60).toString().padStart(2, "0");
-  const sec = (s % 60).toString().padStart(2, "0");
-  return `${m}:${sec}`;
-}
-
-const PRIORITY_COLORS: Record<string, string> = {
-  high:   "#c87a6a",
-  medium: "#c8a860",
-  low:    "#7a9a7a",
-};
-
-// ─── Typing reveal hook ───────────────────────────────────────────────────────
-
-function useTypingReveal(text: string, active: boolean): string {
-  const [displayed, setDisplayed] = useState("");
-  const indexRef = useRef(0);
-
-  useEffect(() => {
-    if (!active || !text) { setDisplayed(""); indexRef.current = 0; return; }
-    indexRef.current = 0;
-    setDisplayed("");
-    // Speed: aim for ~4s for 200-char text, clamp 8–30ms per char
-    const speed = Math.max(8, Math.min(30, 4000 / text.length));
-    const interval = setInterval(() => {
-      indexRef.current += 2; // reveal 2 chars per tick for smoothness
-      setDisplayed(text.slice(0, indexRef.current));
-      if (indexRef.current >= text.length) clearInterval(interval);
-    }, speed);
-    return () => clearInterval(interval);
-  }, [text, active]);
-
-  return displayed;
-}
-
-// ─── Phase components ─────────────────────────────────────────────────────────
-
-// The landing view: the mic is always front-and-centre. Past entries are one tap away
-// via the link at the bottom (only shown once there's history to browse).
-function IdlePhase({
-  onStart,
-  onWrite,
-  entryCount,
-  onViewEntries,
-  isGuest,
-}: {
-  onStart: () => void;
-  onWrite: () => void;
-  entryCount: number;
-  onViewEntries: () => void;
-  isGuest: boolean;
-}) {
-  return (
-    <div className="flex flex-col flex-1 animate-fade-in pb-nav">
-      {/* Mic + write — vertically centred in the space above the entries bar */}
-      <div className="flex flex-col items-center justify-center flex-1 gap-8">
-        <div className="text-center space-y-1">
-          <p className="font-mono text-xs uppercase tracking-[0.25em] text-parchment-600">
-            {format(new Date(), "EEEE, MMMM d")}
-          </p>
-          <p className="font-mono text-parchment-400 text-sm mt-3 tracking-wide">
-            how are you feeling today?
-          </p>
-          <p className="font-mono text-parchment-800 text-[11px] tracking-wide">
-            speak your mind or write it out
-          </p>
-          {isGuest && (
-            <p className="font-mono text-parchment-600 text-xs leading-relaxed max-w-[18rem] mx-auto pt-4">
-              new here? try talking through your day — goals you have for the week or
-              month, tasks you need to get done, or something you want to get better at.
-            </p>
-          )}
-        </div>
-
-        <div className="relative flex items-center justify-center">
-          <span className="absolute inset-0 rounded-full bg-gold/20 animate-pulse-ring" />
-          <button
-            onClick={onStart}
-            className="relative w-24 h-24 rounded-full bg-ink-800 border-2 border-gold/50
-                       flex items-center justify-center
-                       transition-all duration-200 active:scale-95
-                       hover:border-gold hover:shadow-gold-glow focus:outline-none"
-            aria-label="Start recording"
-          >
-            <svg width="36" height="36" viewBox="0 0 24 24" fill="none"
-                 stroke="#c8a878" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-              <rect x="9" y="2" width="6" height="11" rx="3"/>
-              <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
-              <line x1="12" y1="19" x2="12" y2="23"/>
-              <line x1="8"  y1="23" x2="16" y2="23"/>
-            </svg>
-          </button>
-        </div>
-
-        <div className="flex flex-col items-center gap-4">
-          <p className="font-mono text-parchment-700 text-[11px] tracking-[0.15em] uppercase">
-            tap to speak
-          </p>
-          <div className="flex items-center gap-3 w-40">
-            <div className="flex-1 h-px bg-ink-700" />
-            <span className="font-mono text-[10px] text-parchment-800 uppercase tracking-widest">or</span>
-            <div className="flex-1 h-px bg-ink-700" />
-          </div>
-          <button
-            onClick={onWrite}
-            className="flex items-center gap-2 px-5 py-2.5 rounded-full
-                       border border-ink-700 hover:border-parchment-700/50
-                       transition-all duration-200 active:scale-95 focus:outline-none group"
-            aria-label="Write your entry"
-          >
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none"
-                 stroke="#8a7a6a" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"
-                 className="group-hover:stroke-parchment-500 transition-colors">
-              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
-              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
-            </svg>
-            <span className="font-mono text-[11px] tracking-[0.15em] uppercase text-parchment-700
-                             group-hover:text-parchment-500 transition-colors">
-              write it out
-            </span>
-          </button>
-        </div>
-      </div>
-
-      {/* Past entries — a clear, full-width bar pinned at the bottom (only once there's history) */}
-      {entryCount > 0 && (
-        <button
-          onClick={onViewEntries}
-          className="flex items-center justify-center gap-2.5 w-full py-3.5 rounded-xl
-                     bg-ink-900 border border-ink-700 hover:border-gold/40 hover:bg-ink-800
-                     text-parchment-400 hover:text-parchment-200
-                     transition-all duration-150 active:scale-[0.99] focus:outline-none"
-          aria-label="View past entries"
-        >
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none"
-               stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M3 3v5h5" />
-            <path d="M3.05 13A9 9 0 1 0 6 5.3L3 8" />
-            <path d="M12 7v5l3 2" />
-          </svg>
-          <span className="font-mono text-xs tracking-[0.15em] uppercase">
-            View past entries
-          </span>
-          <span className="font-mono text-[10px] leading-none px-1.5 py-1 rounded-full
-                           bg-gold/15 text-gold border border-gold/25">
-            {entryCount}
-          </span>
-        </button>
-      )}
-    </div>
-  );
-}
-
-// The history list, reached from the mic page. Back returns to the mic; the two icons
-// start a fresh entry without going back first.
-function EntriesListView({
-  entries,
-  onBack,
-  onStart,
-  onWrite,
-  onSelectEntry,
-}: {
-  entries: JournalEntry[];
-  onBack: () => void;
-  onStart: () => void;
-  onWrite: () => void;
-  onSelectEntry: (e: JournalEntry) => void;
-}) {
-  return (
-    <div className="flex flex-col flex-1 gap-5 animate-fade-in">
-      {/* Header row: back + new-entry actions */}
-      <div className="flex items-center justify-between">
-        <div>
-          <button
-            onClick={onBack}
-            className="flex items-center gap-2 mb-1 text-parchment-600 hover:text-parchment-400
-                       transition-colors font-mono text-[11px] uppercase tracking-widest focus:outline-none"
-            aria-label="Back to recording"
-          >
-            ← back
-          </button>
-          <p className="font-display italic text-xl text-parchment-200">Past entries</p>
-        </div>
-        <div className="flex gap-2">
-          <button
-            onClick={onWrite}
-            className="w-10 h-10 rounded-xl bg-ink-800 border border-ink-700 flex items-center justify-center
-                       text-parchment-500 hover:text-parchment-200 hover:border-ink-600
-                       transition-all active:scale-95 focus:outline-none"
-            aria-label="Write new entry"
-          >
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none"
-                 stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
-              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
-            </svg>
-          </button>
-          <button
-            onClick={onStart}
-            className="w-10 h-10 rounded-xl bg-gold/10 border border-gold/30 flex items-center justify-center
-                       hover:bg-gold/20 hover:border-gold/50
-                       transition-all active:scale-95 focus:outline-none"
-            aria-label="Record new entry"
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
-                 stroke="#c8a878" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-              <rect x="9" y="2" width="6" height="11" rx="3"/>
-              <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
-              <line x1="12" y1="19" x2="12" y2="23"/>
-              <line x1="8"  y1="23" x2="16" y2="23"/>
-            </svg>
-          </button>
-        </div>
-      </div>
-
-      {/* Entry list */}
-      <div className="flex flex-col gap-3 pb-nav">
-        {entries.map(e => (
-          <button
-            key={e.id}
-            onClick={() => onSelectEntry(e)}
-            className="text-left bg-ink-900 border border-ink-700 rounded-xl px-4 py-3.5
-                       hover:border-ink-600 transition-all duration-150 active:scale-[0.99] focus:outline-none"
-          >
-            <div className="flex items-center justify-between gap-2 mb-1.5">
-              <span className="flex items-center gap-1.5 font-mono text-[10px] text-parchment-700 uppercase tracking-wider">
-                {format(parseISO(e.date), "EEE, MMM d").toUpperCase()}
-                {e.private && (
-                  <span
-                    title="On this device only"
-                    className="inline-flex items-center gap-1 text-gold/70 normal-case tracking-normal"
-                  >
-                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none"
-                         stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <rect x="3" y="11" width="18" height="11" rx="2" />
-                      <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-                    </svg>
-                    device only
-                  </span>
-                )}
-              </span>
-              {e.mood && (
-                <span className="font-mono text-[9px] text-gold/70 border border-gold/20 rounded-full px-2 py-0.5 flex-shrink-0">
-                  {e.mood}
-                </span>
-              )}
-            </div>
-            <p className="font-display italic text-sm text-parchment-300 leading-relaxed line-clamp-2">
-              {(e.yesterday || e.today || e.tomorrow || e.rawContent).slice(0, 130)}
-              {(e.yesterday || e.today || e.tomorrow || e.rawContent).length > 130 ? "…" : ""}
-            </p>
-            <div className="flex gap-3 mt-2 font-mono text-[9px] text-parchment-700">
-              <span>
-                {e.tasks?.length ?? 0} task{(e.tasks?.length ?? 0) === 1 ? "" : "s"}
-              </span>
-              <span>·</span>
-              <span>
-                {e.reminders?.length ?? 0} reminder{(e.reminders?.length ?? 0) === 1 ? "" : "s"}
-              </span>
-            </div>
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function WritingPhase({
-  onSubmit,
-  onCancel,
-  getSuggestions,
-}: {
-  onSubmit: (text: string) => void;
-  onCancel: () => void;
-  getSuggestions: (text: string, cursor: number) => string[];
-}) {
-  const [text, setText]     = useState("");
-  const [cursor, setCursor] = useState(0);
-  const textareaRef         = useRef<HTMLTextAreaElement>(null);
-
-  const suggestions = useMemo(
-    () => (text.length >= 2 ? getSuggestions(text, cursor) : []),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [text, cursor]
-  );
-
-  const updateCursor = (e: React.SyntheticEvent<HTMLTextAreaElement>) =>
-    setCursor((e.target as HTMLTextAreaElement).selectionStart ?? 0);
-
-  const insertSuggestion = useCallback(
-    (word: string) => {
-      const ta = textareaRef.current;
-      if (!ta) return;
-
-      const pos = cursor;
-      const val = ta.value;
-
-      // Walk back from cursor to find start of the current partial word
-      let wordStart = pos;
-      while (wordStart > 0 && !/\s/.test(val[wordStart - 1])) wordStart--;
-
-      const newText   = val.slice(0, wordStart) + word + " " + val.slice(pos);
-      const newCursor = wordStart + word.length + 1;
-
-      setText(newText);
-      setCursor(newCursor);
-
-      requestAnimationFrame(() => {
-        ta.selectionStart = newCursor;
-        ta.selectionEnd   = newCursor;
-        ta.focus();
-      });
-    },
-    [cursor]
-  );
-
-  return (
-    <div className="flex flex-col flex-1 gap-5 animate-fade-in">
-      <div className="text-center">
-        <p className="font-mono text-xs uppercase tracking-[0.25em] text-parchment-600">
-          {format(new Date(), "EEEE, MMMM d")}
-        </p>
-        <p className="font-mono text-parchment-400 text-sm mt-3 tracking-wide">
-          how are you feeling today?
-        </p>
-      </div>
-
-      {/* Suggestion strip */}
-      <div className="min-h-[32px] flex items-center">
-        {suggestions.length > 0 ? (
-          <div data-no-swipe className="flex gap-2 overflow-x-auto w-full pb-0.5 scrollbar-none">
-            {suggestions.map((s) => (
-              <button
-                key={s}
-                onMouseDown={(e) => { e.preventDefault(); insertSuggestion(s); }}
-                className="flex-shrink-0 px-3 py-1 rounded-full
-                           bg-ink-800 border border-ink-600
-                           font-mono text-[11px] text-parchment-400
-                           hover:border-parchment-700/50 hover:text-parchment-300
-                           active:scale-95 transition-all duration-100 focus:outline-none"
-              >
-                {s}
-              </button>
-            ))}
-          </div>
-        ) : (
-          <p className="font-mono text-[10px] text-parchment-800 tracking-widest">
-            suggestions appear as you type
-          </p>
-        )}
-      </div>
-
-      <div className="card flex-1 flex flex-col">
-        <textarea
-          ref={textareaRef}
-          className="flex-1 w-full min-h-[200px] bg-transparent font-mono text-sm
-                     text-parchment-300 placeholder-parchment-800 resize-none
-                     focus:outline-none leading-7"
-          placeholder={"just start writing…\n\nyesterday i finished…\ntoday i need to…\nfeeling pretty…"}
-          value={text}
-          onChange={(e) => { setText(e.target.value); updateCursor(e); }}
-          onSelect={updateCursor}
-          onClick={updateCursor}
-          onKeyUp={updateCursor}
-          autoFocus
-        />
-        <p className="text-right font-mono text-[10px] text-parchment-800 mt-2">
-          {text.length} chars
-        </p>
-      </div>
-
-      <div className="action-bar">
-        <button onClick={onCancel} className="btn-ghost flex-1">
-          ← back
-        </button>
-        <button
-          onClick={() => text.trim() && onSubmit(text.trim())}
-          disabled={!text.trim()}
-          className="btn-primary flex-1"
-        >
-          Analyse entry
-        </button>
-      </div>
-    </div>
-  );
-}
-
-function RecordingPhase({ elapsed, onStop }: { elapsed: number; onStop: () => void }) {
-  return (
-    <div className="flex flex-col items-center justify-center flex-1 gap-8 animate-fade-in">
-      {/* Elapsed timer */}
-      <p className="font-display text-5xl text-parchment-300 tracking-tight tabular-nums">
-        {formatElapsed(elapsed)}
-      </p>
-
-      {/* Waveform */}
-      <div className="w-full px-4">
-        <Waveform />
-      </div>
-
-      {/* Stop button */}
-      <button
-        onClick={onStop}
-        className="flex flex-col items-center gap-2 group focus:outline-none"
-        aria-label="Stop recording"
-      >
-        <div className="w-14 h-14 rounded-full border border-parchment-700/50
-                        flex items-center justify-center
-                        transition-all duration-150 group-active:scale-95
-                        group-hover:border-parchment-500">
-          {/* Stop square */}
-          <div className="w-5 h-5 rounded-sm bg-parchment-400" />
-        </div>
-        <span className="font-mono text-[10px] uppercase tracking-widest text-parchment-700">
-          tap to stop
-        </span>
-      </button>
-    </div>
-  );
-}
-
-function AnalyzingPhase({ transcript }: { transcript: string }) {
-  const displayed = useTypingReveal(transcript, true);
-  return (
-    <div className="flex flex-col flex-1 gap-6 animate-fade-in">
-      {/* Status bar */}
-      <div className="flex items-center gap-3 pt-2">
-        {/* Spinner */}
-        <svg className="w-4 h-4 text-gold animate-spin-slow flex-shrink-0"
-             viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-          <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83
-                   M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
-        </svg>
-        <span className="font-mono text-[10px] uppercase tracking-[0.2em] text-gold/80">
-          parsing entry…
-        </span>
-      </div>
-
-      {/* Scrolling transcript with typing cursor */}
-      <div className="flex-1 overflow-y-auto">
-        <div className="card min-h-[200px]">
-          <p className="label mb-3">Entry</p>
-          <p className="font-mono text-sm leading-7 text-parchment-300 whitespace-pre-wrap">
-            {displayed}
-            {/* Blinking cursor */}
-            <span className="inline-block w-[2px] h-[14px] bg-gold ml-0.5 align-middle animate-blink" />
-          </p>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// Build "Save your 3 tasks & 1 goal"-style copy from the analysis so the earned sign-in
-// gate references the user's actual result. Falls back to a generic label when empty.
-function saveGateLabel(parsed: ParsedEntry): string {
-  const parts: string[] = [];
-  const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
-  if (parsed.tasks?.length) parts.push(plural(parsed.tasks.length, "task"));
-  if (parsed.goals?.length) parts.push(plural(parsed.goals.length, "goal"));
-  if (parsed.reminders?.length) parts.push(plural(parsed.reminders.length, "reminder"));
-  if (!parts.length) return "Save your entry";
-  const joined =
-    parts.length === 1
-      ? parts[0]
-      : `${parts.slice(0, -1).join(", ")} & ${parts[parts.length - 1]}`;
-  return `Save your ${joined}`;
-}
-
-function ReviewPhase({
-  transcript,
-  parsed,
-  onSave,
-  onDiscard,
-  onSignIn,
-  saving,
-  requiresAuth,
-  showPrivateToggle,
-  keepPrivate,
-  onTogglePrivate,
-}: {
-  transcript: string;
-  parsed: ParsedEntry;
-  onSave: () => void;
-  onDiscard: () => void;
-  onSignIn: () => void;
-  saving: boolean;
-  requiresAuth: boolean;
-  showPrivateToggle: boolean;
-  keepPrivate: boolean;
-  onTogglePrivate: (v: boolean) => void;
-}) {
-  const [showRaw, setShowRaw] = useState(false);
-
-  return (
-    <div className="flex flex-col flex-1 gap-4 animate-slide-up overflow-y-auto pb-4">
-      {/* Crisis support (transient — never saved with the entry; see lib/crisis.ts) */}
-      {parsed.risk && parsed.risk.level !== "none" && (
-        <CrisisSupportCard risk={parsed.risk} />
-      )}
-
-      {/* Mood badge */}
-      {parsed.mood && (
-        <div className="flex items-center gap-2">
-          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full
-                           bg-gold/10 border border-gold/25 text-xs font-mono text-gold tracking-wide">
-            <span className="text-base leading-none">{moodEmoji(parsed.mood)}</span>
-            {parsed.mood}
-          </span>
-        </div>
-      )}
-
-      {/* Yesterday */}
-      {parsed.yesterday && (
-        <SectionCard color="blue" label="Yesterday" content={parsed.yesterday} />
-      )}
-      {/* Today */}
-      {parsed.today && (
-        <SectionCard color="amber" label="Today" content={parsed.today} />
-      )}
-      {/* Tomorrow */}
-      {parsed.tomorrow && (
-        <SectionCard color="green" label="Tomorrow / Upcoming" content={parsed.tomorrow} />
-      )}
-
-      {/* Extracted tasks */}
-      {parsed.tasks?.length > 0 && (
-        <div className="card">
-          <p className="label mb-3">Tasks ({parsed.tasks.length})</p>
-          <div className="space-y-2">
-            {parsed.tasks.map((t, i) => (
-              <div key={i} className="flex items-start gap-2.5">
-                <span
-                  className="mt-1.5 w-2 h-2 rounded-full flex-shrink-0"
-                  style={{ backgroundColor: PRIORITY_COLORS[t.priority] ?? PRIORITY_COLORS.medium }}
-                />
-                <div>
-                  <p className="text-sm font-mono text-parchment-300">{t.title}</p>
-                  {t.dueDate && (
-                    <p className="text-[10px] font-mono text-parchment-700 mt-0.5">
-                      due {format(new Date(t.dueDate), "MMM d")}
-                    </p>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Extracted reminders */}
-      {parsed.reminders?.length > 0 && (
-        <div className="card">
-          <p className="label mb-3">Reminders ({parsed.reminders.length})</p>
-          <div className="space-y-2">
-            {parsed.reminders.map((r, i) => (
-              <div key={i} className="flex items-start gap-2.5">
-                <span className="mt-1.5 w-2 h-2 rounded-full flex-shrink-0 bg-parchment-600" />
-                <div>
-                  <p className="text-sm font-mono text-parchment-300">{r.title}</p>
-                  <p className="text-[10px] font-mono text-parchment-700 mt-0.5">
-                    {format(new Date(r.eventDate), "MMM d, yyyy")}
-                  </p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* No content fallback */}
-      {!parsed.yesterday && !parsed.today && !parsed.tomorrow &&
-       !parsed.tasks?.length && !parsed.reminders?.length && (
-        <div className="card text-center py-6">
-          <p className="font-mono text-sm text-parchment-700">
-            No structure detected — entry saved as raw text.
-          </p>
-        </div>
-      )}
-
-      {/* Raw transcript toggle */}
-      <button
-        onClick={() => setShowRaw(!showRaw)}
-        className="text-left text-[10px] font-mono uppercase tracking-widest text-parchment-700
-                   hover:text-parchment-500 transition-colors"
-      >
-        {showRaw ? "hide" : "show"} transcript ▾
-      </button>
-      {showRaw && (
-        <div className="card">
-          <p className="font-mono text-xs text-parchment-600 leading-6 whitespace-pre-wrap">
-            {transcript}
-          </p>
-        </div>
-      )}
-
-      {/* Keep-on-device toggle — only in sync mode, where there's a server to opt out of.
-          In local mode everything is already device-only, so the choice is redundant. */}
-      {showPrivateToggle && (
-        <button
-          type="button"
-          onClick={() => onTogglePrivate(!keepPrivate)}
-          aria-pressed={keepPrivate}
-          className={`flex items-center gap-3 w-full text-left px-4 py-3 rounded-xl border transition-all
-                      focus:outline-none ${
-                        keepPrivate
-                          ? "bg-gold/10 border-gold/40"
-                          : "bg-ink-900 border-ink-700 hover:border-ink-600"
-                      }`}
-        >
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none"
-               stroke={keepPrivate ? "#c8a878" : "#8a7a6a"} strokeWidth="1.6"
-               strokeLinecap="round" strokeLinejoin="round" className="flex-shrink-0">
-            <rect x="3" y="11" width="18" height="11" rx="2" />
-            <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-          </svg>
-          <span className="flex-1 min-w-0">
-            <span className={`block font-mono text-[11px] uppercase tracking-wide ${
-              keepPrivate ? "text-gold" : "text-parchment-400"
-            }`}>
-              Keep on this device only
-            </span>
-            <span className="block font-mono text-[9px] text-parchment-700 mt-0.5 leading-snug">
-              Won&apos;t sync to your account or other devices.
-            </span>
-          </span>
-          {/* Switch */}
-          <span className={`relative w-9 h-5 rounded-full flex-shrink-0 transition-colors ${
-            keepPrivate ? "bg-gold/60" : "bg-ink-600"
-          }`}>
-            <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-parchment-200 transition-all ${
-              keepPrivate ? "left-[18px]" : "left-0.5"
-            }`} />
-          </span>
-        </button>
-      )}
-
-      {/* Action buttons */}
-      <div className="action-bar">
-        <button onClick={onDiscard} className="btn-ghost flex-1">
-          Discard
-        </button>
-        {requiresAuth ? (
-          // Not signed in — earned sign-in gate; stashes the entry, then sends to sign in
-          <button
-            onClick={onSignIn}
-            className="btn-primary flex-1 flex-col gap-0.5 py-2"
-          >
-            <span className="text-xs leading-none">{saveGateLabel(parsed)}</span>
-            <span className="text-[9px] opacity-70 leading-none font-mono tracking-wide">sign in — we&apos;ll keep it</span>
-          </button>
-        ) : (
-          <button onClick={onSave} disabled={saving} className="btn-primary flex-1">
-            {saving ? "Saving…" : "Save Entry"}
-          </button>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ─── Section card ─────────────────────────────────────────────────────────────
-
-const SECTION_STYLES: Record<string, { border: string; labelColor: string; bg: string }> = {
-  blue:  { border: "border-blue-900/60",  labelColor: "text-blue-400/70",  bg: "bg-blue-950/30"  },
-  amber: { border: "border-amber-900/60", labelColor: "text-amber-400/70", bg: "bg-amber-950/30" },
-  green: { border: "border-green-900/60", labelColor: "text-green-400/70", bg: "bg-green-950/30" },
-};
-
-function SectionCard({ color, label, content }: { color: string; label: string; content: string }) {
-  const s = SECTION_STYLES[color] ?? SECTION_STYLES.amber;
-  return (
-    <div className={`rounded-xl border ${s.border} ${s.bg} p-4`}>
-      <p className={`text-[10px] font-mono uppercase tracking-[0.2em] mb-2 ${s.labelColor}`}>
-        {label}
-      </p>
-      <p className="font-mono text-sm leading-6 text-parchment-300">{content}</p>
-    </div>
-  );
-}
-
-// ─── Entry detail view ────────────────────────────────────────────────────────
-
-function EntryDetail({
-  entry,
-  onBack,
-}: {
-  entry: JournalEntry;
-  onBack: () => void;
-}) {
-  return (
-    <div className="flex flex-col flex-1 overflow-hidden animate-fade-in">
-      <button
-        onClick={onBack}
-        className="flex items-center gap-2 mb-5 text-parchment-600 hover:text-parchment-400
-                   transition-colors font-mono text-[11px] uppercase tracking-widest focus:outline-none"
-      >
-        ← back
-      </button>
-      <div className="flex-1 overflow-y-auto pb-4 space-y-4">
-        <div>
-          <p className="flex items-center gap-2 font-mono text-[10px] text-parchment-700 uppercase tracking-widest mb-2">
-            {format(parseISO(entry.date), "EEEE, MMMM d, yyyy")}
-            {entry.private && (
-              <span className="inline-flex items-center gap-1 text-gold/70 normal-case tracking-normal">
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="none"
-                     stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <rect x="3" y="11" width="18" height="11" rx="2" />
-                  <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-                </svg>
-                device only
-              </span>
-            )}
-          </p>
-          {entry.mood && (
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full
-                             bg-gold/10 border border-gold/25 text-xs font-mono text-gold tracking-wide">
-              <span className="text-base leading-none">{moodEmoji(entry.mood)}</span>
-              {entry.mood}
-            </span>
-          )}
-        </div>
-
-        {entry.yesterday && <SectionCard color="blue"  label="Yesterday"          content={entry.yesterday} />}
-        {entry.today     && <SectionCard color="amber" label="Today"              content={entry.today}     />}
-        {entry.tomorrow  && <SectionCard color="green" label="Tomorrow / Upcoming" content={entry.tomorrow}  />}
-
-        {!entry.yesterday && !entry.today && !entry.tomorrow && (
-          <div className="card">
-            <p className="font-mono text-sm text-parchment-400 leading-6 whitespace-pre-wrap">
-              {entry.rawContent}
-            </p>
-          </div>
-        )}
-
-        {(entry.tasks?.length ?? 0) > 0 && (
-          <div className="card">
-            <p className="label mb-3">Tasks ({entry.tasks!.length})</p>
-            <div className="space-y-2">
-              {entry.tasks!.map(t => (
-                <div key={t.id} className="flex items-start gap-2.5">
-                  <span
-                    className="mt-1.5 w-2 h-2 rounded-full flex-shrink-0"
-                    style={{ background: PRIORITY_COLORS[t.priority] ?? PRIORITY_COLORS.medium }}
-                  />
-                  <p className="font-mono text-sm text-parchment-300">{t.title}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {(entry.reminders?.length ?? 0) > 0 && (
-          <div className="card">
-            <p className="label mb-3">Reminders ({entry.reminders!.length})</p>
-            <div className="space-y-2">
-              {entry.reminders!.map(r => (
-                <div key={r.id} className="flex items-start gap-2.5">
-                  <span className="mt-1.5 w-2 h-2 rounded-full flex-shrink-0 bg-parchment-600" />
-                  <div>
-                    <p className="font-mono text-sm text-parchment-300">{r.title}</p>
-                    <p className="font-mono text-[10px] text-parchment-700 mt-0.5">
-                      {format(parseISO(r.eventDate), "MMM d, yyyy")}
-                    </p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ─── Mood emoji map ───────────────────────────────────────────────────────────
-
-function moodEmoji(mood: string): string {
-  const m = mood.toLowerCase();
-  if (/happy|joy|great|good/.test(m))        return "☀";
-  if (/sad|down|low/.test(m))                 return "◌";
-  if (/stress|anxious|worried|overwhelm/.test(m)) return "◈";
-  if (/energet|motiv/.test(m))                return "⚡";
-  if (/tired|exhaust/.test(m))                return "◐";
-  if (/reflect|thought/.test(m))              return "✦";
-  if (/excited|thrilled/.test(m))             return "✧";
-  return "◎";
-}
-
-// ─── Main component ───────────────────────────────────────────────────────────
+const ANALYZE_WATCHDOG_MS = 20_000;
 
 export default function JournalScreen() {
   const { data: session } = useSession();
   const dataMode = useDataMode();
   const remote = dataMode === "remote";
-  const { state: recState, elapsed, transcript, error, startRecording, stopRecording, reset } =
-    useRecorder();
+  const {
+    state: recState,
+    elapsed,
+    transcript,
+    error: recError,
+    startRecording,
+    stopRecording,
+    cancelRecording,
+    reset,
+    levelRef,
+  } = useRecorder();
 
-  const [phase, setPhase]               = useState<RecordingPhase>("idle");
-  const [parsed, setParsed]             = useState<ParsedEntry | null>(null);
-  const [analyzeError, setAnalyzeError] = useState<string | null>(null);
-  const [saving, setSaving]             = useState(false);
-  const [saved, setSaved]               = useState(false);
+  const [phase, setPhase] = useState<JournalPhase>("idle");
+  const [parsed, setParsed] = useState<ParsedEntry | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [savedPlain, setSavedPlain] = useState(false);
   const [activeContent, setActiveContent] = useState("");
-  const [keepPrivate, setKeepPrivate]   = useState(false);
-  const [entries, setEntries]           = useState<JournalEntry[]>([]);
+  const [keepPrivate, setKeepPrivate] = useState(false);
+  const [entries, setEntries] = useState<JournalEntry[]>([]);
   const [selectedEntry, setSelectedEntry] = useState<JournalEntry | null>(null);
   const [viewingEntries, setViewingEntries] = useState(false);
+  const [micDenied, setMicDenied] = useState(false);
+  const [reviewMode, setReviewMode] = useState<"structured" | "plain">("structured");
+  const [writingPrefill, setWritingPrefill] = useState("");
+  const [writingBanner, setWritingBanner] = useState<string | null>(null);
+  const [idleBanner, setIdleBanner] = useState<string | null>(null);
+  // Transient crisis signal for plain saves (the review screen never showed it) —
+  // zero-retention: state only, never persisted, cleared with the next entry.
+  const [plainRisk, setPlainRisk] = useState<RiskSignal | null>(null);
+  // Attachments for the in-flight entry — survive writing → review.
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
 
-  // Autocomplete engine — lazy-init once on first use, persists for session
+  // Autocomplete engine — lazy-init once, persists for the session.
   const engineRef = useRef<AutocompleteEngine | null>(null);
   const getEngine = useCallback((): AutocompleteEngine => {
     if (!engineRef.current) engineRef.current = buildAutocompleteEngine();
     return engineRef.current;
   }, []);
-
   const getSuggestions = useCallback(
     (text: string, cursor: number) => getEngine().getSuggestions(text, cursor),
     [getEngine]
   );
 
-  // Fetch journal history — refresh after a new entry is saved. Local mode (signed-out demo or
-  // signed-in vault) reads the on-device store; sync mode reads the account.
+  // Journal history — local mode reads the on-device store; sync mode reads the
+  // account and folds in device-only (private) vault entries.
   useEffect(() => {
     if (!remote) {
       setEntries(loadLocal().entries);
       return;
     }
-
     fetch("/api/journal")
-      .then(r => r.json())
-      .then(data => {
+      .then((r) => r.json())
+      .then((data) => {
         const remoteEntries = Array.isArray(data) ? data : [];
-        // Fold in device-only ("private") entries the user kept off the server, then sort by
-        // date desc so private + synced entries interleave chronologically in the history list.
-        const merged = [...remoteEntries, ...loadPrivateVaultEntries()].sort(
-          (a, b) => b.date.localeCompare(a.date)
+        // Server entries can't hold attachments yet — fold the on-device overlay back in.
+        const account = activeLocalAccountId();
+        const withAtts = remoteEntries.map((e: JournalEntry) => {
+          const atts = loadEntryAttachmentsOverlay(account, e.date);
+          return atts.length ? { ...e, attachments: atts } : e;
+        });
+        const merged = [...withAtts, ...loadPrivateVaultEntries()].sort((a, b) =>
+          b.date.localeCompare(a.date)
         );
         setEntries(merged);
       })
@@ -859,34 +114,42 @@ export default function JournalScreen() {
 
   const runAnalysis = useCallback(async (text: string) => {
     setPhase("analyzing");
-    setAnalyzeError(null);
+    setWritingBanner(null);
+    const controller = new AbortController();
+    const watchdog = setTimeout(() => controller.abort(), ANALYZE_WATCHDOG_MS);
     try {
       const res = await fetch("/api/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          content:  text,
+          content: text,
           timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
         }),
+        signal: controller.signal,
       });
       if (!res.ok) throw new Error("Analysis failed");
       const result: ParsedEntry = await res.json();
       setParsed(result);
+      setReviewMode("structured");
       setPhase("review");
     } catch {
-      setAnalyzeError("Could not analyze entry. You can still save it as-is.");
-      setParsed({ tasks: [], reminders: [] });
-      setPhase("review");
+      // §7.3 — never strand the user: their words return to the writing surface
+      // with both exits (retry the analysis, or save as a plain entry).
+      setWritingPrefill(text);
+      setWritingBanner("couldn't make sense of that — your words are safe here.");
+      setPhase("writing");
+    } finally {
+      clearTimeout(watchdog);
     }
   }, []);
 
-  // Sync phase with recorder state
+  // Recorder → phase sync.
   useEffect(() => {
-    if (recState === "recording")    setPhase("recording");
+    if (recState === "recording") setPhase("recording");
     if (recState === "transcribing") setPhase("analyzing");
   }, [recState]);
 
-  // When recorder finishes transcribing → analyze
+  // Transcription finished → analyze.
   useEffect(() => {
     if (recState === "idle" && transcript && phase === "analyzing") {
       setActiveContent(transcript);
@@ -894,9 +157,18 @@ export default function JournalScreen() {
     }
   }, [recState, transcript, phase, runAnalysis]);
 
+  // Transcription failed → back to idle with a calm banner (no eternal spinner).
+  useEffect(() => {
+    if (recState === "idle" && recError && !transcript && phase === "analyzing") {
+      setIdleBanner("couldn't hear that back — want to try again, or write it out?");
+      setPhase("idle");
+    }
+  }, [recState, recError, transcript, phase]);
+
   const handleStart = useCallback(async () => {
-    setPhase("recording");
-    await startRecording();
+    setIdleBanner(null);
+    const ok = await startRecording();
+    if (!ok) setMicDenied(true); // phase stays idle — the denied state is designed, not stuck
   }, [startRecording]);
 
   const handleStop = useCallback(() => {
@@ -904,134 +176,233 @@ export default function JournalScreen() {
     setPhase("analyzing");
   }, [stopRecording]);
 
-  const handleWriteSubmit = useCallback((text: string) => {
-    setActiveContent(text);
-    runAnalysis(text);
-  }, [runAnalysis]);
+  const handleCancelRecording = useCallback(() => {
+    cancelRecording();
+    setPhase("idle");
+  }, [cancelRecording]);
 
-  const handleSave = useCallback(async () => {
-    if (!activeContent) return;
-    setSaving(true);
-    try {
-      // Zero-retention: the crisis signal never leaves the review screen — strip it
-      // before ANY persistence (server POST, vault/demo localStorage).
-      const persistable = stripRisk(parsed ?? { tasks: [], reminders: [] });
+  const handleWriteSubmit = useCallback(
+    (text: string) => {
+      setActiveContent(text);
+      runAnalysis(text);
+    },
+    [runAnalysis]
+  );
+
+  const persistEntry = useCallback(
+    async (content: string, analysis: ParsedEntry) => {
+      // Zero-retention: the crisis signal never leaves the client.
+      const persistable = stripRisk(analysis);
       if (remote && keepPrivate) {
-        // Sync mode, but the user chose to keep this one on-device only: write it to the vault
-        // (flagged private) instead of the account. It surfaces read-only in history + Today.
-        appendLocalJournalEntry(activeContent, persistable, true);
+        appendLocalJournalEntry(content, persistable, true, attachments);
       } else if (remote) {
         await fetch("/api/journal", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ rawContent: activeContent, analysis: persistable }),
+          body: JSON.stringify({ rawContent: content, analysis: persistable }),
         });
+        // No server blob storage yet — attachments persist on this device, keyed by
+        // the entry's date, and merge back onto the fetched entry (see above).
+        if (attachments.length) {
+          saveEntryAttachmentsOverlay(
+            activeLocalAccountId(),
+            new Date().toISOString(),
+            attachments
+          );
+        }
       } else {
-        // On-device mode (signed-in vault): persist the entry + its tasks/reminders/goals locally.
-        appendLocalJournalEntry(activeContent, persistable);
+        appendLocalJournalEntry(content, persistable, false, attachments);
       }
-      // Train the local autocomplete model on every saved entry
-      getEngine().train(activeContent);
+      getEngine().train(content);
+    },
+    [remote, keepPrivate, getEngine, attachments]
+  );
+
+  // Structured/plain save from the review screen.
+  const handleSave = useCallback(async () => {
+    if (!activeContent) return;
+    setSaving(true);
+    try {
+      const analysis =
+        reviewMode === "plain"
+          ? ({ tasks: [], reminders: [] } as ParsedEntry)
+          : (parsed ?? { tasks: [], reminders: [] });
+      await persistEntry(activeContent, analysis);
+      setSavedPlain(reviewMode === "plain");
       setSaved(true);
     } catch {
-      setAnalyzeError("Failed to save entry.");
+      setWritingBanner("failed to save — your words are still here.");
+      setWritingPrefill(activeContent);
+      setPhase("writing");
     } finally {
       setSaving(false);
     }
-  }, [activeContent, parsed, getEngine, remote, keepPrivate]);
+  }, [activeContent, parsed, reviewMode, persistEntry]);
 
-  // Unsigned user tapping the earned sign-in gate: stash the just-analyzed entry so it
-  // survives the OAuth round-trip, then send them to sign in. PendingEntryMigrator (mounted
-  // in the root layout) POSTs it to /api/journal the moment a session appears.
+  // Plain save straight from the writing surface ("save as-is") — no analysis at all.
+  // The deterministic crisis layer still runs client-side so support never depends on
+  // choosing the parsed flow.
+  const handleSavePlain = useCallback(
+    async (text: string) => {
+      setActiveContent(text);
+      const risk = detectCrisisSignals(text);
+      if (!session) {
+        // Earned sign-in gate: stash, then send to sign in (PendingEntryMigrator posts it).
+        try {
+          window.localStorage.setItem(
+            "progress:pendingEntry",
+            JSON.stringify({
+              raw: text,
+              analysis: { tasks: [], reminders: [] },
+              date: new Date().toISOString(),
+            })
+          );
+        } catch {}
+        signIn(undefined, { callbackUrl: "/" });
+        return;
+      }
+      setSaving(true);
+      try {
+        await persistEntry(text, { tasks: [], reminders: [] });
+        setPlainRisk(risk.level !== "none" ? risk : null);
+        setSavedPlain(true);
+        setSaved(true);
+      } catch {
+        setWritingBanner("failed to save — your words are still here.");
+        setWritingPrefill(text);
+      } finally {
+        setSaving(false);
+      }
+    },
+    [session, persistEntry]
+  );
+
+  // Unsigned user on the review screen: stash the analyzed entry across the OAuth
+  // round-trip, then sign in.
   const handleSignInToSave = useCallback(() => {
     try {
+      const analysis =
+        reviewMode === "plain"
+          ? { tasks: [], reminders: [] }
+          : stripRisk(parsed ?? { tasks: [], reminders: [] });
       window.localStorage.setItem(
         "progress:pendingEntry",
-        JSON.stringify({
-          raw: activeContent,
-          // stripRisk: the pending-entry stash persists across the OAuth round-trip —
-          // the crisis signal must not be written to localStorage (zero-retention).
-          analysis: stripRisk(parsed ?? { tasks: [], reminders: [] }),
-          date: new Date().toISOString(),
-        })
+        JSON.stringify({ raw: activeContent, analysis, date: new Date().toISOString() })
       );
-    } catch {
-      // Non-fatal: if storage fails we still send them to sign in.
-    }
+    } catch {}
     signIn(undefined, { callbackUrl: "/" });
-  }, [activeContent, parsed]);
+  }, [activeContent, parsed, reviewMode]);
 
   const handleDiscard = useCallback(() => {
     reset();
     setParsed(null);
     setSaved(false);
+    setSavedPlain(false);
     setPhase("idle");
     setActiveContent("");
     setKeepPrivate(false);
     setSelectedEntry(null);
-    setViewingEntries(false); // land back on the mic page after a new entry
+    setViewingEntries(false);
+    setMicDenied(false);
+    setReviewMode("structured");
+    setWritingPrefill("");
+    setWritingBanner(null);
+    setIdleBanner(null);
+    setPlainRisk(null);
+    setAttachments([]);
   }, [reset]);
 
-  // ── Saved confirmation ─────────────────────────────────
+  // ── Saved — the payoff bridges onward (§7.5) ─────────────────────────────
   if (saved) {
-    const taskCount = parsed?.tasks?.length ?? 0;
-    const remCount  = parsed?.reminders?.length ?? 0;
+    const taskCount = savedPlain ? 0 : (parsed?.tasks?.length ?? 0);
+    const remCount = savedPlain ? 0 : (parsed?.reminders?.length ?? 0);
+    const goalCount = savedPlain ? 0 : (parsed?.goals?.length ?? 0);
+    const hasItems = taskCount + remCount + goalCount > 0;
     return (
-      <div className="flex flex-col items-center justify-center flex-1 gap-6 animate-fade-in">
-        <div className="text-center space-y-3">
-          <p className="font-display text-6xl text-gold/60">✦</p>
-          <h2 className="font-display text-2xl text-parchment-200">Entry saved</h2>
-          <p className="font-mono text-xs text-parchment-600 tracking-wide">
-            {taskCount > 0 && `${taskCount} task${taskCount > 1 ? "s" : ""}`}
-            {taskCount > 0 && remCount > 0 && " · "}
-            {remCount > 0 && `${remCount} reminder${remCount > 1 ? "s" : ""}`}
-            {taskCount === 0 && remCount === 0 && "no tasks or reminders extracted"}
-          </p>
+      <div className="flex flex-col flex-1 px-5 pb-nav animate-fade-in overflow-y-auto">
+        {plainRisk && (
+          <div className="pt-6">
+            <CrisisSupportCard risk={plainRisk} />
+          </div>
+        )}
+        <div className="flex flex-col items-center justify-center flex-1 gap-6">
+          <div className="text-center space-y-3">
+            <p aria-hidden className="font-display text-6xl text-accent/60 animate-breathe">
+              ✦
+            </p>
+            <h2 className="font-display text-voice text-parchment-200">Entry saved</h2>
+            <p className="font-mono text-body text-parchment-600 tracking-wide">
+              {savedPlain
+                ? "kept exactly as you wrote it"
+                : hasItems
+                  ? [
+                      taskCount > 0 && `${taskCount} task${taskCount > 1 ? "s" : ""}`,
+                      goalCount > 0 && `${goalCount} goal${goalCount > 1 ? "s" : ""}`,
+                      remCount > 0 && `${remCount} reminder${remCount > 1 ? "s" : ""}`,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")
+                  : "no tasks or reminders extracted"}
+            </p>
+          </div>
+          <div className="flex flex-col items-center gap-3">
+            {hasItems && (
+              <Link href="/" className="btn-quiet text-accent-ink/80 hover:text-accent-ink">
+                see today&apos;s agenda →
+              </Link>
+            )}
+            <button onClick={handleDiscard} className="btn-ghost px-8">
+              New entry
+            </button>
+          </div>
         </div>
-        <button onClick={handleDiscard} className="btn-ghost">
-          New entry
-        </button>
       </div>
     );
   }
 
-  // Show selected entry detail view
+  // ── Entry detail ─────────────────────────────────────────────────────────
   if (selectedEntry) {
     return (
       <div className="flex flex-col flex-1 overflow-hidden">
         <header className="flex items-center justify-between px-5 pt-safe pt-5 pb-4 flex-shrink-0">
-          <h1 className="font-display italic text-2xl text-parchment-200 leading-none">Journal</h1>
+          <h1 className="font-display italic text-voice text-parchment-200 leading-none">
+            Journal
+          </h1>
         </header>
-        <div className="flex-1 overflow-y-auto px-5 pb-nav flex flex-col">
+        <div className="flex-1 overflow-y-auto px-5 flex flex-col">
           <EntryDetail entry={selectedEntry} onBack={() => setSelectedEntry(null)} />
         </div>
       </div>
     );
   }
 
+  const voiceFlowDots: JournalPhase[] = ["recording", "analyzing", "review"];
+
   return (
     <div className="flex flex-col flex-1 overflow-hidden animate-fade-in">
       {/* ── Header ─────────────────────────────────────── */}
       <header className="flex items-center justify-between px-5 pt-safe pt-5 pb-4 flex-shrink-0">
         <div>
-          <h1 className="font-display italic text-2xl text-parchment-200 leading-none">Journal</h1>
-          <p className="font-mono text-[10px] text-parchment-700 mt-1 tracking-widest uppercase">
+          <h1 className="font-display italic text-voice text-parchment-200 leading-none">
+            Journal
+          </h1>
+          <p className="font-mono text-label text-parchment-700 mt-1 uppercase">
             {format(new Date(), "MMM d, yyyy")}
           </p>
           {!session && (
-            <p className="font-mono text-[9px] text-parchment-700/90 mt-1.5 tracking-wide">
+            <p className="font-mono text-label text-parchment-700/90 mt-1.5 normal-case tracking-wide">
               Try it free · sign in to save your entry
             </p>
           )}
         </div>
-        {/* Phase indicator dots — only shown when in an active phase */}
-        {phase !== "idle" && (
-          <div className="flex gap-1.5 mr-12 md:mr-0">
-            {(["idle","recording","analyzing","review"] as RecordingPhase[]).map((p) => (
+        {/* Voice-flow progress dots */}
+        {voiceFlowDots.includes(phase) && (
+          <div aria-hidden className="flex gap-1.5 mr-12 md:mr-0">
+            {voiceFlowDots.map((p) => (
               <span
                 key={p}
-                className={`w-1.5 h-1.5 rounded-full transition-all duration-300 ${
-                  phase === p ? "bg-gold scale-125" : "bg-ink-600"
+                className={`w-1.5 h-1.5 rounded-full transition-all duration-calm ${
+                  phase === p ? "bg-accent scale-125" : "bg-ink-600"
                 }`}
               />
             ))}
@@ -1039,12 +410,11 @@ export default function JournalScreen() {
         )}
       </header>
 
-      {/* ── Content area ───────────────────────────────── */}
+      {/* ── Content ────────────────────────────────────── */}
       <div className="flex-1 overflow-y-auto px-5 flex flex-col">
-        {/* Error banner */}
-        {(error || analyzeError) && (
-          <div className="mb-4 px-4 py-3 rounded-xl bg-priority-high/10 border border-priority-high/30">
-            <p className="font-mono text-xs text-priority-high">{error ?? analyzeError}</p>
+        {idleBanner && phase === "idle" && !micDenied && (
+          <div className="banner-error mb-4" role="alert">
+            <span className="flex-1">{idleBanner}</span>
           </div>
         )}
 
@@ -1052,13 +422,14 @@ export default function JournalScreen() {
           <IdlePhase
             onStart={handleStart}
             onWrite={() => setPhase("writing")}
-            entryCount={entries.length}
+            entries={entries}
             onViewEntries={() => setViewingEntries(true)}
             isGuest={!session}
+            micDenied={micDenied}
           />
         )}
         {phase === "idle" && viewingEntries && (
-          <EntriesListView
+          <EntriesList
             entries={entries}
             onBack={() => setViewingEntries(false)}
             onStart={handleStart}
@@ -1066,13 +437,37 @@ export default function JournalScreen() {
             onSelectEntry={setSelectedEntry}
           />
         )}
-        {phase === "writing"   && <WritingPhase onSubmit={handleWriteSubmit} onCancel={() => setPhase("idle")} getSuggestions={getSuggestions} />}
-        {phase === "recording" && <RecordingPhase elapsed={elapsed} onStop={handleStop} />}
+        {phase === "writing" && (
+          <WritingPhase
+            onAnalyze={handleWriteSubmit}
+            onSavePlain={handleSavePlain}
+            onCancel={() => {
+              setWritingPrefill("");
+              setWritingBanner(null);
+              setPhase("idle");
+            }}
+            getSuggestions={getSuggestions}
+            initialText={writingPrefill}
+            banner={writingBanner}
+            savingPlain={saving}
+            attachments={attachments}
+            onAttachmentsChange={setAttachments}
+          />
+        )}
+        {phase === "recording" && (
+          <RecordingPhase
+            elapsed={elapsed}
+            levelRef={levelRef}
+            onStop={handleStop}
+            onCancel={handleCancelRecording}
+          />
+        )}
         {phase === "analyzing" && <AnalyzingPhase transcript={activeContent} />}
-        {phase === "review"    && parsed && (
+        {phase === "review" && parsed && (
           <ReviewPhase
             transcript={activeContent}
             parsed={parsed}
+            onUpdate={setParsed}
             onSave={handleSave}
             onDiscard={handleDiscard}
             onSignIn={handleSignInToSave}
@@ -1081,6 +476,10 @@ export default function JournalScreen() {
             showPrivateToggle={remote}
             keepPrivate={keepPrivate}
             onTogglePrivate={setKeepPrivate}
+            mode={reviewMode}
+            onModeChange={setReviewMode}
+            attachments={attachments}
+            onAttachmentsChange={setAttachments}
           />
         )}
       </div>

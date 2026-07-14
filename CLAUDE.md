@@ -94,7 +94,8 @@ Every user-data table (`JournalEntry`, `Task`, `Reminder`, `Goal`, `Completion`,
 | `lib/validators.ts` | Zod schemas for all API inputs (incl. `GoalCreate/UpdateSchema`, goal fields in `JournalCreateSchema`) |
 | `lib/parser.ts` | Regex Yesterday/Today/Tomorrow + task/reminder extraction (fallback; does not emit goals) |
 | `lib/demoData.ts` | Demo state — `createDemoState`, `loadDemoState`, `appendDemoJournalEntry` (tasks/reminders/goals) |
-| `components/JournalScreen.tsx` | 5-phase state machine + entry history (640+ lines — avoid adding top-level state) |
+| `components/JournalScreen.tsx` | Journal state machine + persistence/recovery ONLY — presentation lives in `components/journal/*` (IdlePhase, WritingPhase, RecordingPhase, AnalyzingPhase, ReviewPhase, EntriesList, EntryDetail, AttachRow) |
+| `lib/attachments.ts` | Attachment processing (image downscale → data URL) + on-device persistence; server blob contract documented inline (not yet provisioned) |
 | `components/TodayScreen.tsx` | Home dashboard — greeting, agenda, quick links |
 | `components/TasksScreen.tsx` | Goals screen — renders `GoalsSection` then the task list |
 | `components/GoalsSection.tsx` | Self-contained goals UI — per-goal progress + step/quick-log, **weekly momentum bar**, goal edit/convert via shared modal, demo + optimistic |
@@ -145,10 +146,14 @@ CRON_SECRET=                # random; Vercel Cron sends it as `Authorization: Be
 ## Code Conventions
 
 - All screen/component files are `"use client"` — Next.js App Router
-- Component classes live in `globals.css`: `.btn-primary`, `.btn-ghost`, `.card`, `.card-tight`, `.input`, `.label`
-- Custom colors: `ink-*` (charcoal bg), `parchment-*` (cream text), `gold` (accent), `priority-*` (task colors)
+- **Design system ("Lamplight") lives in `docs/design-system.md`** — tokens, component specs with states, a11y contract, native-migration notes. It supersedes the token tables in `app/desingn.md`. Screens consume tokens + component classes + `components/ui/` primitives; raw hex in screen code is a defect.
+- Component classes live in `globals.css`: `.btn-primary`, `.btn-ghost`, `.btn-quiet`, `.btn-danger`, `.icon-btn`, `.icon-btn-accent`, `.row-action` (44px row edit/delete hits), `.card`, `.card-tight`, `.card-interactive`, `.input`, `.label`, `.pill-mood`, `.chip`, `.badge-count`, `.seg`/`.seg-item`/`.seg-item-active`, `.banner-error`, `.action-bar` (sticky footer WITH scrim — content never reads through it)
+- UI primitives in `components/ui/`: `SectionCard` (time-tinted, editable), `EmptyState` (Voice italic line), `Toggle`, `RecordButton` (idle/recording/processing/denied), `AttachmentTile`; plus level-driven `components/Waveform.tsx`
+- Custom colors: `ink-*` (charcoal bg, flips in light mode), `parchment-*` (cream text, flips), `accent-*` (user preset; `accent-ink` = text-safe variant that deepens in light mode — use for accent-colored TEXT), `gold` (fixed brand chrome only — in-app interactive color is `accent`), `priority-*`, `tint-past/now/next` (+ `-label`) — warm Yesterday/Today/Tomorrow section tints
+- Type roles in Tailwind fontSize: `label/meta/body/body-lg` (mono interface) and `voice-sm/voice/voice-lg/voice-xl/numeral` (Playfair "Voice" — these multiply by the user's `--type-scale`). Screen titles: `font-display italic text-voice`, sentence case.
+- Motion: `duration-quick/gentle/calm`, `animate-rise` (staggered payoff, use `animationDelay`), `animate-breathe` (record halo). Reduced-motion is handled globally in `globals.css` — never opt out.
 - Mobile-first, max-width 430px mobile / 2xl desktop, safe-area padding via CSS `env()`
-- `SideNav` (desktop, hidden on mobile) + `BottomNav` (mobile, hidden on md+)
+- `SideNav` (desktop, hidden on mobile) + `BottomNav` (mobile, hidden on md+). The `/tasks` tab is named **Goals** everywhere (never "To-Do's").
 
 ## Data Model Notes
 
@@ -166,6 +171,9 @@ CRON_SECRET=                # random; Vercel Cron sends it as `Authorization: Be
 - `GEMINI_API_KEY` must be set in Vercel env vars — if missing, Gemini throws and the route silently falls back to `lib/parser.ts` (logged via `console.error`)
 - `JournalScreen.tsx` phase transition: `runAnalysis` `useCallback` must be declared **before** the `useEffect` that references it in its deps array (TypeScript forward-reference error otherwise)
 - `phase === "analyzing"` (not `"recording"`) is the correct check in the post-transcription effect — phase is already `"analyzing"` by the time `recState` reaches `"idle"`
+- **Journal flows (2026-07 redesign):** plain ("save as-is" / "as spoken") entries skip extraction entirely — an entry with empty analysis IS a plain entry, no schema flag. Plain saves from the writing surface run the deterministic crisis layer client-side (`detectCrisisSignals`) so safety coverage doesn't depend on choosing the parsed flow. Analysis failure returns the user's words to the writing surface (never a dead-end spinner; 20s watchdog). Mic denial renders a designed idle variant (`micDenied`), not an error banner. `startRecording()` now returns a boolean — don't advance phase before it resolves true.
+- **Attachments are device-local for now** (no server blob store): local/vault entries carry them inline; sync-mode entries store them in a per-account localStorage overlay keyed by entry date (`lib/attachments.ts`), merged back in `JournalScreen`. Images are downscaled to ≤1280px JPEG. Cap: 4/entry. When a blob store is provisioned, swap `dataUrl` for `url` per the contract in `lib/attachments.ts`.
+- **`POST /api/journal` dedupes same-day re-saves** — re-analyzing the same date skips tasks/reminders already created for that entry (by title) and active journal-sourced goals (by title). One entry per day still means a second save REPLACES the day's narrative (pre-existing upsert semantics — a real product decision if multi-entry days are ever wanted).
 - `NEXTAUTH_SECRET` must be set or NextAuth throws on any session operation
 - Demo state localStorage key is `"progress-demo-state-v1"` (legacy name)
 - **Migrations are broken for `migrate dev`:** `prisma/migrations/migration_lock.toml` says `provider = "sqlite"` (early prototype) but the live DB is Neon Postgres, so `db:migrate` fails **P3019**. Apply schema changes with `npm run db:push`. Preview the SQL first with: `npx prisma migrate diff --from-schema-datasource prisma/schema.prisma --to-schema-datamodel prisma/schema.prisma --script`. There is only one `DATABASE_URL`, so `db:push` writes directly to prod.

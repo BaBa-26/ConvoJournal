@@ -57,6 +57,9 @@ module.exports = {
           DEFAULT: "rgb(var(--accent) / <alpha-value>)",
           light: "rgb(var(--accent-light) / <alpha-value>)",
           dark: "rgb(var(--accent-dark) / <alpha-value>)",
+          // Text-safe accent: base in dark mode, deepened in light mode. Use for
+          // accent-colored TEXT on surfaces (pills, links, counts) — never fills.
+          ink: "rgb(var(--accent-ink) / <alpha-value>)",
         },
         // Priority colors
         priority: {
@@ -64,6 +67,37 @@ module.exports = {
           medium: "#c8a860",
           low: "#7a9a7a",
         },
+        // Time tints — warm-family Yesterday/Today/Tomorrow section colors (design-system §1.4).
+        // CSS-var driven so the label shade flips for light mode; the hue channels are shared.
+        tint: {
+          past: "rgb(var(--tint-past) / <alpha-value>)",
+          "past-label": "rgb(var(--tint-past-label) / <alpha-value>)",
+          now: "rgb(var(--tint-now) / <alpha-value>)",
+          "now-label": "rgb(var(--tint-now-label) / <alpha-value>)",
+          next: "rgb(var(--tint-next) / <alpha-value>)",
+          "next-label": "rgb(var(--tint-next-label) / <alpha-value>)",
+        },
+      },
+      // Type roles (design-system §2.1). voice-*/numeral multiply by the user's
+      // --type-scale preference so the whole "spoken" layer honors it.
+      fontSize: {
+        label: ["10px", { lineHeight: "1.4", letterSpacing: "0.2em" }],
+        meta: ["11px", { lineHeight: "1.5" }],
+        body: ["13px", { lineHeight: "1.6" }],
+        "body-lg": ["15px", { lineHeight: "1.7" }],
+        "voice-sm": ["calc(1.0625rem * var(--type-scale))", { lineHeight: "1.5" }],
+        voice: ["calc(1.375rem * var(--type-scale))", { lineHeight: "1.35" }],
+        "voice-lg": ["calc(1.75rem * var(--type-scale))", { lineHeight: "1.25" }],
+        "voice-xl": ["calc(2.75rem * var(--type-scale))", { lineHeight: "1.1" }],
+        numeral: ["calc(2.125rem * var(--type-scale))", { lineHeight: "1.1" }],
+      },
+      transitionDuration: {
+        quick: "120ms",
+        gentle: "240ms",
+        calm: "400ms",
+      },
+      transitionTimingFunction: {
+        calm: "cubic-bezier(0.22, 1, 0.36, 1)",
       },
       fontFamily: {
         display: ["var(--font-playfair)", "Georgia", "serif"],
@@ -72,6 +106,10 @@ module.exports = {
       animation: {
         "fade-in": "fadeIn 0.4s ease-out forwards",
         "slide-up": "slideUp 0.35s ease-out forwards",
+        // Payoff stagger (design-system §4/§7.4) — "both" keeps delayed items hidden pre-start
+        rise: "rise 0.5s cubic-bezier(0.22, 1, 0.36, 1) both",
+        // Idle record halo — breathing pace, replaces the 2s notification-style pulse-ring
+        breathe: "breathe 3.6s ease-in-out infinite",
         "blink": "blink 1s step-end infinite",
         "wave-1": "wave 1.1s ease-in-out infinite",
         "wave-2": "wave 0.9s ease-in-out infinite 0.1s",
@@ -88,6 +126,14 @@ module.exports = {
         fadeIn: {
           "0%": { opacity: "0", transform: "translateY(6px)" },
           "100%": { opacity: "1", transform: "translateY(0)" },
+        },
+        rise: {
+          "0%": { opacity: "0", transform: "translateY(12px)" },
+          "100%": { opacity: "1", transform: "translateY(0)" },
+        },
+        breathe: {
+          "0%, 100%": { transform: "scale(1)", opacity: "0.45" },
+          "50%": { transform: "scale(1.05)", opacity: "0.12" },
         },
         slideUp: {
           "0%": { opacity: "0", transform: "translateY(20px)" },
@@ -107,6 +153,13 @@ module.exports = {
         },
       },
       boxShadow: {
+        // Accent-aware glow — follows the user's accent preset (record button only)
+        glow: "0 0 24px rgb(var(--accent) / 0.25)",
+        "glow-lg": "0 0 40px rgb(var(--accent) / 0.35)",
+        // Overlay elevation — the only other shadows in the system
+        sheet: "0 -8px 40px rgb(0 0 0 / 0.45)",
+        modal: "0 12px 48px rgb(0 0 0 / 0.55)",
+        // Legacy aliases (pre-design-system) — do not use in new code
         "gold-glow": "0 0 24px rgba(200, 168, 120, 0.25)",
         "gold-glow-lg": "0 0 40px rgba(200, 168, 120, 0.35)",
       },

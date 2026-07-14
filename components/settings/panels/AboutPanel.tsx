@@ -12,7 +12,7 @@ export default function AboutPanel({ onClose }: { onClose: () => void }) {
           <Link href="/" onClick={onClose} className="btn-ghost justify-start">Today</Link>
           <Link href="/journal" onClick={onClose} className="btn-ghost justify-start">Journal</Link>
           <Link href="/schedule" onClick={onClose} className="btn-ghost justify-start">Calendar</Link>
-          <Link href="/tasks" onClick={onClose} className="btn-ghost justify-start">To-Do&apos;s</Link>
+          <Link href="/tasks" onClick={onClose} className="btn-ghost justify-start">Goals</Link>
         </div>
       </section>
 

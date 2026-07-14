@@ -9,9 +9,14 @@ interface UseRecorderReturn {
   elapsed: number;           // seconds
   transcript: string;
   error: string | null;
-  startRecording: () => Promise<void>;
+  startRecording: () => Promise<boolean>; // resolves false when the mic couldn't start
   stopRecording: () => void;
+  /** Abandon the take: stops the mic and discards audio without transcribing. */
+  cancelRecording: () => void;
   reset: () => void;
+  /** Live input level 0…1, written every animation frame while recording (no re-renders —
+      consumers like Waveform/RecordButton read it in their own rAF loop). */
+  levelRef: React.MutableRefObject<number>;
 }
 
 function getSupportedMimeType(): string {
@@ -37,10 +42,60 @@ export function useRecorder(): UseRecorderReturn {
   const chunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Clean up timer on unmount
-  useEffect(() => () => { if (timerRef.current) clearInterval(timerRef.current); }, []);
+  // Live input level (design-system §6.6): an AnalyserNode reads the stream and writes
+  // RMS into a ref every frame. Native port swaps this for AVAudioRecorder/AudioRecord
+  // peaks — the consumer contract is just `level: 0…1`.
+  const levelRef = useRef(0);
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const levelRafRef = useRef<number | null>(null);
+  const cancelledRef = useRef(false);
 
-  const startRecording = useCallback(async () => {
+  const stopLevelMeter = useCallback(() => {
+    if (levelRafRef.current !== null) cancelAnimationFrame(levelRafRef.current);
+    levelRafRef.current = null;
+    audioCtxRef.current?.close().catch(() => {});
+    audioCtxRef.current = null;
+    levelRef.current = 0;
+  }, []);
+
+  const startLevelMeter = useCallback((stream: MediaStream) => {
+    try {
+      const Ctx = window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      const ctx = new Ctx();
+      audioCtxRef.current = ctx;
+      const source = ctx.createMediaStreamSource(stream);
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 512;
+      source.connect(analyser);
+      const buf = new Uint8Array(analyser.fftSize);
+      const tick = () => {
+        analyser.getByteTimeDomainData(buf);
+        let sum = 0;
+        for (let i = 0; i < buf.length; i++) {
+          const v = (buf[i] - 128) / 128;
+          sum += v * v;
+        }
+        // RMS with a little gain so normal speech reads mid-range; smoothed for calm.
+        const rms = Math.min(1, Math.sqrt(sum / buf.length) * 3.2);
+        levelRef.current = levelRef.current * 0.7 + rms * 0.3;
+        levelRafRef.current = requestAnimationFrame(tick);
+      };
+      levelRafRef.current = requestAnimationFrame(tick);
+    } catch {
+      // Level metering is progressive enhancement — recording works without it.
+    }
+  }, []);
+
+  // Clean up timer + meter on unmount
+  useEffect(
+    () => () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+      stopLevelMeter();
+    },
+    [stopLevelMeter]
+  );
+
+  const startRecording = useCallback(async (): Promise<boolean> => {
     setError(null);
     setTranscript("");
     setElapsed(0);
@@ -62,6 +117,15 @@ export function useRecorder(): UseRecorderReturn {
       recorder.onstop = async () => {
         stream.getTracks().forEach((t) => t.stop());
         if (timerRef.current) clearInterval(timerRef.current);
+        stopLevelMeter();
+
+        // Cancelled take — drop the audio, no transcription.
+        if (cancelledRef.current) {
+          cancelledRef.current = false;
+          chunksRef.current = [];
+          setState("idle");
+          return;
+        }
 
         setState("transcribing");
 
@@ -84,20 +148,31 @@ export function useRecorder(): UseRecorderReturn {
       };
 
       recorder.start(250);
+      startLevelMeter(stream);
       setState("recording");
 
       // Elapsed timer
       timerRef.current = setInterval(() => {
         setElapsed((s) => s + 1);
       }, 1000);
+      return true;
     } catch {
       setError("Microphone access denied. Please allow microphone access and try again.");
       setState("idle");
+      return false;
     }
-  }, []);
+  }, [startLevelMeter, stopLevelMeter]);
 
   const stopRecording = useCallback(() => {
     if (mediaRecorderRef.current && state === "recording") {
+      mediaRecorderRef.current.stop();
+      if (timerRef.current) clearInterval(timerRef.current);
+    }
+  }, [state]);
+
+  const cancelRecording = useCallback(() => {
+    if (mediaRecorderRef.current && state === "recording") {
+      cancelledRef.current = true;
       mediaRecorderRef.current.stop();
       if (timerRef.current) clearInterval(timerRef.current);
     }
@@ -110,5 +185,5 @@ export function useRecorder(): UseRecorderReturn {
     setState("idle");
   }, []);
 
-  return { state, elapsed, transcript, error, startRecording, stopRecording, reset };
+  return { state, elapsed, transcript, error, startRecording, stopRecording, cancelRecording, reset, levelRef };
 }

@@ -108,8 +108,8 @@ function CalendarWidget({
               </span>
               {(tCount > 0 || rCount > 0) && (
                 <div className="flex gap-[3px] mt-[3px]">
-                  {tCount > 0 && <span className="w-[5px] h-[5px] rounded-full bg-gold/60" />}
-                  {rCount > 0 && <span className="w-[5px] h-[5px] rounded-full bg-blue-400/60" />}
+                  {tCount > 0 && <span className="w-[5px] h-[5px] rounded-full bg-accent/70" />}
+                  {rCount > 0 && <span className="w-[5px] h-[5px] rounded-full bg-tint-past-label/70" />}
                 </div>
               )}
             </button>
@@ -120,11 +120,11 @@ function CalendarWidget({
       {/* Legend */}
       <div className="flex gap-5 mt-3 pt-2 border-t border-ink-800">
         <div className="flex items-center gap-1.5">
-          <span className="w-[5px] h-[5px] rounded-full bg-gold/60" />
+          <span className="w-[5px] h-[5px] rounded-full bg-accent/70" />
           <span className="font-mono text-[9px] text-parchment-800 uppercase tracking-wider">tasks</span>
         </div>
         <div className="flex items-center gap-1.5">
-          <span className="w-[5px] h-[5px] rounded-full bg-blue-400/60" />
+          <span className="w-[5px] h-[5px] rounded-full bg-tint-past-label/70" />
           <span className="font-mono text-[9px] text-parchment-800 uppercase tracking-wider">reminders</span>
         </div>
       </div>
@@ -206,9 +206,9 @@ function EditButton({ onClick, label }: { onClick: () => void; label: string }) 
     <button
       onClick={onClick}
       aria-label={label}
-      className="text-parchment-800 hover:text-parchment-400 transition-colors focus:outline-none flex-shrink-0"
+      className="row-action -my-2"
     >
-      <svg width="13" height="13" viewBox="0 0 24 24" fill="none"
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
            stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
         <path d="M12 20h9" />
         <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
@@ -234,7 +234,7 @@ function TaskRow({
                     ${task.completed ? "bg-gold/25 border-gold/40" : "border-parchment-700 hover:border-parchment-500"}`}
       >
         {task.completed && (
-          <span className="text-gold text-[9px] leading-none">✓</span>
+          <span className="text-accent text-[9px] leading-none">✓</span>
         )}
       </button>
       <span
@@ -247,7 +247,8 @@ function TaskRow({
       <EditButton onClick={() => onEdit(task)} label="Edit task" />
       <button
         onClick={() => onDelete(task.id)}
-        className="text-parchment-800 hover:text-priority-high transition-colors font-mono text-xs focus:outline-none"
+        aria-label="Delete task"
+        className="row-action -my-2 hover:text-priority-high font-mono text-sm"
       >
         ✕
       </button>
@@ -265,7 +266,7 @@ function ReminderRow({
 }) {
   return (
     <div className="flex items-center gap-3 py-2.5">
-      <span className="text-blue-400/60 font-mono text-[11px] flex-shrink-0 mt-0.5">◎</span>
+      <span className="text-tint-past-label/80 font-mono text-[11px] flex-shrink-0 mt-0.5">◎</span>
       <div className="flex-1 min-w-0">
         <p className="font-mono text-sm text-parchment-300 truncate">{reminder.title}</p>
         {showTime && (
@@ -277,7 +278,8 @@ function ReminderRow({
       <EditButton onClick={() => onEdit(reminder)} label="Edit reminder" />
       <button
         onClick={() => onDelete(reminder.id)}
-        className="text-parchment-800 hover:text-priority-high transition-colors font-mono text-xs focus:outline-none"
+        aria-label="Delete reminder"
+        className="row-action -my-2 hover:text-priority-high font-mono text-sm"
       >
         ✕
       </button>
@@ -616,7 +618,7 @@ export default function ScheduleScreen() {
         {/* Header */}
         <header className="flex items-center justify-between px-5 pt-safe pt-5 pb-4 flex-shrink-0">
           <div>
-            <h1 className="font-display text-2xl text-parchment-200 leading-none">schedule</h1>
+            <h1 className="font-display italic text-voice text-parchment-200 leading-none">Schedule</h1>
             <p className="font-mono text-[10px] text-parchment-700 mt-1 tracking-widest uppercase">
               {format(new Date(), "MMM d, yyyy")}
             </p>

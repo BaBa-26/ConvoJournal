@@ -1,44 +1,101 @@
 "use client";
 
-// Animated waveform bars — pure CSS, no canvas needed
-// Each bar uses scaleY to animate from 0.25→1→0.25 with staggered delays
-// Heights and durations vary per bar to look organic
+import { useEffect, useRef, useState } from "react";
 
-const BARS = [
-  { h: 28, dur: "1.1s", delay: "0ms"   },
-  { h: 40, dur: "0.8s", delay: "80ms"  },
-  { h: 20, dur: "1.3s", delay: "160ms" },
-  { h: 44, dur: "0.9s", delay: "40ms"  },
-  { h: 36, dur: "1.2s", delay: "200ms" },
-  { h: 48, dur: "0.75s", delay: "120ms" },
-  { h: 24, dur: "1.4s", delay: "60ms"  },
-  { h: 44, dur: "1.0s", delay: "180ms" },
-  { h: 36, dur: "0.85s", delay: "100ms" },
-  { h: 28, dur: "1.15s", delay: "140ms" },
-  { h: 40, dur: "0.95s", delay: "20ms"  },
-  { h: 20, dur: "1.25s", delay: "220ms" },
-  { h: 44, dur: "0.8s", delay: "90ms"  },
-  { h: 32, dur: "1.1s", delay: "170ms" },
-  { h: 24, dur: "0.9s", delay: "50ms"  },
-  { h: 40, dur: "1.3s", delay: "130ms" },
-];
+// Live waveform (design-system §6.6) — bars render a scrolling history of the REAL
+// input level (levelRef is written by useRecorder's AnalyserNode loop), so the app
+// visibly listens instead of performing a fake animation. DOM styles are mutated in
+// a rAF loop (no React re-renders at frame rate).
+//
+// Reduced motion: a discrete 8-dot level meter (status feedback, no continuous sway).
+// Native port: feed levelRef from AVAudioRecorder / AudioRecord peaks — same contract.
 
-export default function Waveform() {
+const BAR_COUNT = 24;
+const SLICE_MS = 90; // one bar ≈ 90ms of speech
+
+export default function Waveform({ levelRef }: { levelRef: React.MutableRefObject<number> }) {
+  const barsRef = useRef<(HTMLDivElement | null)[]>([]);
+  const historyRef = useRef<number[]>(Array(BAR_COUNT).fill(0));
+  const [reducedMotion, setReducedMotion] = useState(false);
+  const [dotLevel, setDotLevel] = useState(0);
+
+  useEffect(() => {
+    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
+    setReducedMotion(mq.matches);
+    const onChange = (e: MediaQueryListEvent) => setReducedMotion(e.matches);
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, []);
+
+  // Continuous bars — scrolling history, newest at the right.
+  useEffect(() => {
+    if (reducedMotion) return;
+    let raf: number;
+    let lastSlice = performance.now();
+    let slicePeak = 0;
+
+    const tick = (now: number) => {
+      slicePeak = Math.max(slicePeak, levelRef.current);
+      if (now - lastSlice >= SLICE_MS) {
+        historyRef.current.push(slicePeak);
+        historyRef.current.shift();
+        slicePeak = 0;
+        lastSlice = now;
+        const h = historyRef.current;
+        for (let i = 0; i < BAR_COUNT; i++) {
+          const el = barsRef.current[i];
+          if (el) el.style.transform = `scaleY(${0.12 + h[i] * 0.88})`;
+        }
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [levelRef, reducedMotion]);
+
+  // Reduced-motion dot meter — coarse discrete updates only.
+  useEffect(() => {
+    if (!reducedMotion) return;
+    const id = setInterval(() => {
+      setDotLevel(Math.round(levelRef.current * 8));
+    }, 400);
+    return () => clearInterval(id);
+  }, [levelRef, reducedMotion]);
+
+  if (reducedMotion) {
+    return (
+      <div
+        className="flex items-center justify-center gap-2 h-14"
+        role="status"
+        aria-label="Recording — microphone is live"
+      >
+        {Array.from({ length: 8 }, (_, i) => (
+          <span
+            key={i}
+            className={`w-2 h-2 rounded-full transition-opacity duration-quick ${
+              i < dotLevel ? "bg-accent opacity-90" : "bg-accent opacity-20"
+            }`}
+          />
+        ))}
+      </div>
+    );
+  }
+
   return (
     <div
       className="flex items-center justify-center gap-[3px] h-14"
-      aria-label="Recording in progress"
+      role="status"
+      aria-label="Recording — microphone is live"
     >
-      {BARS.map((bar, i) => (
+      {Array.from({ length: BAR_COUNT }, (_, i) => (
         <div
           key={i}
-          className="w-[3px] rounded-full bg-gold origin-center"
-          style={{
-            height: `${bar.h}px`,
-            animation: `wave ${bar.dur} ease-in-out ${bar.delay} infinite`,
-            // Slightly dim every other bar for depth
-            opacity: i % 3 === 1 ? 0.6 : i % 3 === 2 ? 0.85 : 1,
+          ref={(el) => {
+            barsRef.current[i] = el;
           }}
+          className="w-[3px] h-12 rounded-full bg-accent origin-center
+                     transition-transform duration-gentle ease-calm"
+          style={{ transform: "scaleY(0.12)", opacity: 0.55 + (i / BAR_COUNT) * 0.45 }}
         />
       ))}
     </div>
