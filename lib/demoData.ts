@@ -178,7 +178,8 @@ export function withAppendedEntry(
   state: DemoState,
   rawContent: string,
   parsed: ParsedEntry,
-  isPrivate = false
+  isPrivate = false,
+  attachments: JournalEntry["attachments"] = undefined
 ): DemoState {
   const now = new Date().toISOString();
   const entryId = makeId("demo-entry");
@@ -236,6 +237,7 @@ export function withAppendedEntry(
     tasks: nestedTasks.map(cloneTask),
     reminders: nestedReminders.map(cloneReminder),
     private: isPrivate,
+    ...(attachments?.length ? { attachments } : {}),
   };
 
   return {

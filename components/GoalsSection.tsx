@@ -8,6 +8,7 @@ import { loadLocal, updateLocal } from "@/lib/localStore";
 import { useDataMode } from "@/components/PreferencesProvider";
 import ItemEditModal, { type NewItem } from "@/components/ItemEditModal";
 import { convertItemRemote, convertItemDemo } from "@/lib/itemConvert";
+import EmptyState from "@/components/ui/EmptyState";
 
 // Goals completed since the start of this week — from live goals in demo mode, or the
 // durable Completion log (remote). Feeds the momentum bar so cleared wins still count.
@@ -468,9 +469,11 @@ export default function GoalsSection() {
       )}
 
       {goals.length === 0 && !showAdd ? (
-        <p className="font-mono text-xs text-parchment-800 py-2">
-          no goals yet — add one, or say “gym every day this week” in a journal entry
-        </p>
+        <EmptyState
+          className="py-6"
+          line="no goals yet."
+          sub={'add one, or say “gym every day this week” in a journal entry.'}
+        />
       ) : (
         <div className="space-y-2">
           {goals.map((goal) => (

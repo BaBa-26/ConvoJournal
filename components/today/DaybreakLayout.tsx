@@ -5,7 +5,7 @@ import { useTodayData } from "./useTodayData";
 import { useTodayHeader } from "./useTodayHeader";
 import { useWidgetLayout } from "./useWidgetLayout";
 import EditableWidgetStack from "./EditableWidgetStack";
-import { usePreferences } from "@/components/PreferencesProvider";
+import EditLayoutButton from "./EditLayoutButton";
 import type { WidgetKey } from "@/types";
 import {
   AgendaList,
@@ -21,7 +21,6 @@ import {
 export default function DaybreakLayout() {
   const data = useTodayData();
   const { dateLabel, greetWord, firstName, reminderLabel, typeScaleStyle } = useTodayHeader();
-  const { prefs, patchPrefs } = usePreferences();
   const { openSettings } = useSettingsUI();
   const { order, setOrder, editing, toggleEditing, commit, toggleHidden, hiddenWidgets } =
     useWidgetLayout();
@@ -40,34 +39,17 @@ export default function DaybreakLayout() {
   return (
     <div className="flex flex-col flex-1 overflow-hidden today-surface text-foreground animate-fade-in">
       <header className="px-5 pt-safe pt-5 pb-2 flex-shrink-0">
-        {/* Light / Dark toggle + Edit layout */}
-        <div className="flex justify-between items-center mb-2">
-          <div className="flex gap-1 bg-muted border border-border rounded-xl p-1 w-32">
-            {(["light", "dark"] as const).map((m) => (
-              <button
-                key={m}
-                onClick={() => patchPrefs({ colorMode: m })}
-                className={`flex-1 min-h-[30px] rounded-lg font-mono text-[10px] uppercase tracking-[0.1em] transition-colors ${
-                  prefs.colorMode === m ? "bg-accent text-onaccent" : "text-muted-foreground"
-                }`}
-              >
-                {m}
-              </button>
-            ))}
+        {/* The greeting leads; layout editing is one quiet icon (color mode lives in
+            Settings → Appearance). */}
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="font-mono text-[10px] text-muted-foreground uppercase tracking-[0.2em]">{dateLabel}</p>
+            <h1 className="font-display italic font-semibold text-foreground leading-tight mt-1.5" style={typeScaleStyle}>
+              {greetWord}, {firstName}.
+            </h1>
           </div>
-          <button
-            onClick={toggleEditing}
-            className={`mr-12 md:mr-0 rounded-lg px-3 py-2 font-mono text-[9px] uppercase tracking-[0.12em] border transition-colors ${
-              editing ? "bg-accent text-onaccent border-accent" : "bg-muted text-muted-foreground border-border"
-            }`}
-          >
-            {editing ? "Done" : "Edit layout"}
-          </button>
+          <EditLayoutButton editing={editing} onToggle={toggleEditing} className="mr-12 md:mr-0 mt-1" />
         </div>
-        <p className="font-mono text-[10px] text-muted-foreground uppercase tracking-[0.2em]">{dateLabel}</p>
-        <h1 className="font-display italic font-semibold text-foreground leading-tight mt-1.5" style={typeScaleStyle}>
-          {greetWord}, {firstName}.
-        </h1>
         <p className="font-mono text-xs text-muted-foreground leading-relaxed mt-2">
           {data.agendaItems.length > 0
             ? `${data.agendaItems.length} on the agenda, and a quiet evening to write.`

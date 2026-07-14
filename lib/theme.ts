@@ -5,12 +5,14 @@ import { TYPE_SCALE_VALUE, BACKGROUND_PRESETS } from "@/types";
 // dropped straight into the `--accent*` CSS vars that Tailwind's `accent` token reads
 // as `rgb(var(--accent) / <alpha-value>)`. Channels (not hex) are required for the
 // `/opacity` Tailwind modifiers used across the app.
-const ACCENT_RGB: Record<string, { base: string; light: string; dark: string }> = {
-  "#c8a878": { base: "200 168 120", light: "216 188 152", dark: "168 136 88" },  // gold (default)
-  "#c87a6a": { base: "200 122 106", light: "214 150 136", dark: "168 96 82" },   // clay
-  "#7a9a7a": { base: "122 154 122", light: "150 178 150", dark: "96 126 96" },   // sage
-  "#6f9bd1": { base: "111 155 209", light: "146 182 224", dark: "88 126 176" },  // dusk blue
-  "#b07ab0": { base: "176 122 176", light: "198 152 198", dark: "144 96 144" },  // mauve
+// `deep` is the text-safe shade used for accent-colored TEXT in light mode
+// (base accent on cream fails contrast); dark mode keeps the base. See --accent-ink.
+const ACCENT_RGB: Record<string, { base: string; light: string; dark: string; deep: string }> = {
+  "#c8a878": { base: "200 168 120", light: "216 188 152", dark: "168 136 88", deep: "111 88 54" },   // gold (default)
+  "#c87a6a": { base: "200 122 106", light: "214 150 136", dark: "168 96 82", deep: "138 68 54" },    // clay
+  "#7a9a7a": { base: "122 154 122", light: "150 178 150", dark: "96 126 96", deep: "62 92 62" },     // sage
+  "#6f9bd1": { base: "111 155 209", light: "146 182 224", dark: "88 126 176", deep: "50 88 134" },   // dusk blue
+  "#b07ab0": { base: "176 122 176", light: "198 152 198", dark: "144 96 144", deep: "110 62 110" },  // mauve
 };
 
 const DEFAULT_ACCENT = ACCENT_RGB["#c8a878"];
@@ -56,6 +58,7 @@ export function preferenceCssVars(prefs: UserPreferences): React.CSSProperties {
     ["--accent" as string]: a.base,
     ["--accent-light" as string]: a.light,
     ["--accent-dark" as string]: a.dark,
+    ["--accent-deep" as string]: a.deep,
     ["--type-scale" as string]: String(typeScaleValue(prefs.typeScale)),
   };
 }

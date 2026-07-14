@@ -4,6 +4,7 @@ import { useTodayData } from "./useTodayData";
 import { useTodayHeader } from "./useTodayHeader";
 import { useWidgetLayout } from "./useWidgetLayout";
 import EditableWidgetStack from "./EditableWidgetStack";
+import EditLayoutButton from "./EditLayoutButton";
 import { useSettingsUI } from "@/components/settings/SettingsUIProvider";
 import type { WidgetKey } from "@/types";
 import {
@@ -45,14 +46,7 @@ export default function MosaicLayout() {
               {greetWord}, {firstName}.
             </h1>
           </div>
-          <button
-            onClick={toggleEditing}
-            className={`mr-12 md:mr-0 flex-shrink-0 rounded-lg px-3 py-2 font-mono text-[9px] uppercase tracking-[0.12em] border transition-colors ${
-              editing ? "bg-accent text-onaccent border-accent" : "bg-muted text-muted-foreground border-border"
-            }`}
-          >
-            {editing ? "Done" : "Edit layout"}
-          </button>
+          <EditLayoutButton editing={editing} onToggle={toggleEditing} className="mr-12 md:mr-0" />
         </div>
 
         {editing && (

@@ -73,51 +73,78 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    // Create tasks from analysis
+    // Create tasks from analysis. Re-saving the same day upserts the entry, so skip
+    // items this entry already produced (same title) — otherwise every same-day
+    // re-analysis duplicated the whole extraction into Today/Calendar/Goals.
     if (analysis?.tasks?.length) {
-      await db.task.createMany({
-        data: analysis.tasks.map((t) => ({
-          title:          t.title,
-          description:    t.description ?? null,
-          dueDate:        t.dueDate ? new Date(t.dueDate) : null,
-          priority:       t.priority ?? "medium",
-          source:         "journal",
-          userId:         auth.userId,
-          journalEntryId: entry.id,
-        })),
+      const existing = await db.task.findMany({
+        where: { journalEntryId: entry.id, userId: auth.userId },
+        select: { title: true },
       });
+      const seen = new Set(existing.map((t) => t.title));
+      const fresh = analysis.tasks.filter((t) => !seen.has(t.title));
+      if (fresh.length) {
+        await db.task.createMany({
+          data: fresh.map((t) => ({
+            title:          t.title,
+            description:    t.description ?? null,
+            dueDate:        t.dueDate ? new Date(t.dueDate) : null,
+            priority:       t.priority ?? "medium",
+            source:         "journal",
+            userId:         auth.userId,
+            journalEntryId: entry.id,
+          })),
+        });
+      }
     }
 
-    // Create reminders from analysis
+    // Create reminders from analysis (same-day dedupe as tasks)
     if (analysis?.reminders?.length) {
-      await db.reminder.createMany({
-        data: analysis.reminders.map((r) => ({
-          title:          r.title,
-          description:    r.description ?? null,
-          eventDate:      new Date(r.eventDate),
-          userId:         auth.userId,
-          journalEntryId: entry.id,
-        })),
+      const existing = await db.reminder.findMany({
+        where: { journalEntryId: entry.id, userId: auth.userId },
+        select: { title: true },
       });
+      const seen = new Set(existing.map((r) => r.title));
+      const fresh = analysis.reminders.filter((r) => !seen.has(r.title));
+      if (fresh.length) {
+        await db.reminder.createMany({
+          data: fresh.map((r) => ({
+            title:          r.title,
+            description:    r.description ?? null,
+            eventDate:      new Date(r.eventDate),
+            userId:         auth.userId,
+            journalEntryId: entry.id,
+          })),
+        });
+      }
     }
 
-    // Create new goals surfaced by the entry
+    // Create new goals surfaced by the entry. Goals aren't linked to entries, so
+    // same-day dedupe checks the user's active journal-sourced goals by title.
     if (analysis?.goals?.length) {
-      await db.goal.createMany({
-        data: analysis.goals.map((g) => {
-          const target = Math.max(1, Math.round(g.target));
-          return {
-            title:     g.title,
-            unit:      g.unit || "times",
-            target,
-            current:   0,
-            period:    g.period ?? "week",
-            completed: false,
-            source:    "journal",
-            userId:    auth.userId,
-          };
-        }),
+      const existing = await db.goal.findMany({
+        where: { userId: auth.userId, source: "journal", completed: false },
+        select: { title: true },
       });
+      const seen = new Set(existing.map((g) => g.title));
+      const fresh = analysis.goals.filter((g) => !seen.has(g.title));
+      if (fresh.length) {
+        await db.goal.createMany({
+          data: fresh.map((g) => {
+            const target = Math.max(1, Math.round(g.target));
+            return {
+              title:     g.title,
+              unit:      g.unit || "times",
+              target,
+              current:   0,
+              period:    g.period ?? "week",
+              completed: false,
+              source:    "journal",
+              userId:    auth.userId,
+            };
+          }),
+        });
+      }
     }
 
     // Apply progress increments against the user's existing goals (ownership re-checked per id)

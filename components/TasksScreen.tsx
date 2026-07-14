@@ -9,6 +9,7 @@ import { useDataMode } from "@/components/PreferencesProvider";
 import { computeTaskStats } from "@/lib/taskStats";
 import DraggableProgressBar from "@/components/DraggableProgressBar";
 import GoalsSection from "@/components/GoalsSection";
+import EmptyState from "@/components/ui/EmptyState";
 import ItemEditModal, { type NewItem } from "@/components/ItemEditModal";
 import { convertItemRemote, convertItemDemo } from "@/lib/itemConvert";
 
@@ -435,7 +436,7 @@ export default function TasksScreen() {
       <header className="px-5 pt-safe pt-5 pb-4 flex-shrink-0">
         <div className="flex items-start justify-between">
           <div>
-            <h1 className="font-display text-2xl text-parchment-200">To-Do&apos;s</h1>
+            <h1 className="font-display italic text-voice text-parchment-200">Goals</h1>
             <p className="font-mono text-[10px] text-parchment-700 mt-1 tracking-widest uppercase">
               {tab === "goals" ? "tracked targets" : `${pending} pending`}
             </p>
@@ -453,20 +454,14 @@ export default function TasksScreen() {
           )}
         </div>
 
-        {/* Goals / Tasks switcher */}
-        <div className="mt-4 flex gap-1.5 bg-ink-900 rounded-xl p-1">
+        {/* Goals / Tasks switcher — the system segmented control (§6.8) */}
+        <div className="seg mt-4">
           {(["goals", "tasks"] as TabKey[]).map((t) => (
             <button
               key={t}
               onClick={() => setTab(t)}
-              className={`
-                flex-1 py-2 rounded-lg text-[10px] font-mono uppercase tracking-widest
-                transition-all duration-150 min-h-[38px]
-                ${tab === t
-                  ? "bg-ink-700 text-parchment-200 shadow-sm"
-                  : "text-parchment-700 hover:text-parchment-500"
-                }
-              `}
+              aria-pressed={tab === t}
+              className={`seg-item min-h-[44px] ${tab === t ? "seg-item-active" : ""}`}
             >
               {t}
             </button>
@@ -576,13 +571,14 @@ export default function TasksScreen() {
                 <p className="font-mono text-xs text-parchment-700 tracking-widest">loading…</p>
               </div>
             ) : filtered.length === 0 ? (
-              <div className="text-center py-16 space-y-2">
-                <p className="font-mono text-2xl text-parchment-800">◈</p>
-                <p className="font-mono text-xs text-parchment-700 tracking-wide">
-                  {filter === "pending" ? "nothing pending" :
-                   filter === "completed" ? "nothing completed yet" : "no tasks yet"}
-                </p>
-              </div>
+              <EmptyState
+                className="py-12"
+                line={
+                  filter === "pending" ? "nothing pending. enjoy the quiet." :
+                  filter === "completed" ? "nothing completed yet." : "no tasks yet."
+                }
+                sub={filter === "completed" ? undefined : "tasks you speak into a journal entry land here."}
+              />
             ) : (
               <div className="space-y-2 animate-fade-in">
                 {filtered.map((task) => (

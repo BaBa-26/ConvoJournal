@@ -10,7 +10,7 @@ const tabs = [
   { href: "/",         shape: "circle",   label: "Today"    },
   { href: "/journal",  shape: "r-square", label: "Journal"  },
   { href: "/schedule", shape: "square",   label: "Calendar" },
-  { href: "/tasks",    shape: "diamond",  label: "To-Do's"  },
+  { href: "/tasks",    shape: "diamond",  label: "Goals"  },
 ];
 
 // Routes that shouldn't show the app nav.
@@ -41,10 +41,12 @@ export default function BottomNav() {
   return (
     // Full-width fixed shell is click-through; only the centered pill captures taps.
     <nav className="md:hidden fixed inset-x-0 bottom-0 z-50 pb-safe pointer-events-none">
+      {/* Fade-out scrim so scrolled content quiets under the pill (§6.12) */}
+      <div aria-hidden className="nav-scrim absolute inset-x-0 -top-6 bottom-0 pointer-events-none" />
       <div
         className="pointer-events-auto mx-auto mb-3 w-fit max-w-[calc(100%-1.5rem)]
                    flex items-center gap-1 rounded-full p-1.5
-                   bg-ink-900/60 backdrop-blur-xl border border-parchment-100/10
+                   bg-ink-900/75 backdrop-blur-xl border border-parchment-100/10
                    shadow-[0_10px_40px_-8px_rgba(0,0,0,0.6)]"
       >
         {tabs.map(({ href, shape, label }) => {

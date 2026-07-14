@@ -84,9 +84,16 @@ export function resetLocal(): DemoState {
 export function appendLocalJournalEntry(
   rawContent: string,
   parsed: ParsedEntry,
-  isPrivate = false
+  isPrivate = false,
+  attachments: Parameters<typeof withAppendedEntry>[4] = undefined
 ): DemoState {
-  return updateLocal((state) => withAppendedEntry(state, rawContent, parsed, isPrivate));
+  return updateLocal((state) => withAppendedEntry(state, rawContent, parsed, isPrivate, attachments));
+}
+
+// The account id whose local stores are active — attachments overlays share the
+// vault's per-account isolation rule.
+export function activeLocalAccountId(): string | null {
+  return activeAccountId;
 }
 
 // The private overlay for sync (remote) mode: journal entries the user chose to keep on this
