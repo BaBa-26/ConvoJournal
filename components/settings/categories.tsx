@@ -53,6 +53,6 @@ export const CATEGORIES: { key: SettingsCategory; label: string; soon?: boolean 
   { key: "privacy", label: "Privacy & control" },
   { key: "appearance", label: "Appearance" },
   { key: "notifications", label: "Notifications" },
-  { key: "usage", label: "Usage", soon: true },
+  { key: "usage", label: "Plan & usage" },
   { key: "about", label: "About" },
 ];

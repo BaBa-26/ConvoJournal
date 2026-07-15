@@ -6,6 +6,12 @@ import { detectCrisisSignals, mergeRisk, filterCrisisActionables } from "@/lib/c
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { forUser } from "@/lib/prisma";
+import {
+  getEntitlements,
+  recordUsage,
+  hasUsedAnonymousTry,
+  markAnonymousTryUsed,
+} from "@/lib/entitlements";
 import type { AnalysisResult } from "@/types";
 
 // Public endpoint — try-mode works unauthenticated; auth unlocks task dedup context
@@ -28,13 +34,33 @@ export async function POST(req: NextRequest) {
       ? new Date().toLocaleDateString("sv-SE", { timeZone: timezone })
       : new Date().toISOString().slice(0, 10);
 
+    const session = await getServerSession(authOptions);
+
+    // Entitlements gate — primary financial risk, so enforced before any AI call.
+    if (!session?.user?.id) {
+      if (hasUsedAnonymousTry()) {
+        return NextResponse.json(
+          { error: "signin_required", message: "Sign in to keep going." },
+          { status: 401 }
+        );
+      }
+      // Anonymous try-mode: allow this single run; the cookie is set on the response below.
+    } else {
+      const ent = await getEntitlements(session.user.id);
+      if (!ent.canAnalyze) {
+        return NextResponse.json(
+          { error: "quota_exceeded", plan: ent.plan, used: ent.used, limit: ent.weeklyLimit },
+          { status: 402 } // 402 Payment Required — the paywall trigger
+        );
+      }
+    }
+
     // Optional context: pending task dedup + active goals for authenticated users
     let geminiContext: {
       todayISO: string;
       pendingTaskTitles: string[];
       activeGoals?: { id: string; title: string; unit: string; target: number; current: number }[];
     } = { todayISO, pendingTaskTitles: [] };
-    const session = await getServerSession(authOptions);
     if (session?.user?.id) {
       const db = forUser(session.user.id);
       const [pending, goals] = await Promise.all([
@@ -78,7 +104,14 @@ export async function POST(req: NextRequest) {
       filterCrisisActionables(analysis, content);
     }
 
-    return NextResponse.json(analysis);
+    const res = NextResponse.json(analysis);
+    // Record usage only after a successful analysis, so failed calls don't consume quota.
+    if (session?.user?.id) {
+      await recordUsage(session.user.id, "analyze");
+    } else {
+      markAnonymousTryUsed(res); // burns the one free anonymous run
+    }
+    return res;
   } catch (error) {
     if (process.env.NODE_ENV !== "production") console.error("[analyze]", error);
     return NextResponse.json({ error: "Analysis failed" }, { status: 500 });

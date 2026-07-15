@@ -124,6 +124,12 @@ function applySecurityHeaders(res: NextResponse): NextResponse {
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
+  // Stripe webhook — must not be rate-limited (Stripe retries bursts on non-2xx) and
+  // the route handles its own auth via signature verification, not session/IP checks.
+  if (pathname === "/api/billing/webhook") {
+    return applySecurityHeaders(NextResponse.next());
+  }
+
   // Determine client IP (Vercel / standard headers)
   const ip =
     req.headers.get("x-real-ip") ??

@@ -7,6 +7,7 @@ import AuthProvider from "@/components/AuthProvider";
 import PreferencesProvider from "@/components/PreferencesProvider";
 import AppLockProvider from "@/components/AppLockProvider";
 import PendingEntryMigrator from "@/components/PendingEntryMigrator";
+import BillingReturnHandler from "@/components/BillingReturnHandler";
 import SettingsUIProvider from "@/components/settings/SettingsUIProvider";
 import ServiceWorkerRegister from "@/components/ServiceWorkerRegister";
 import { SpeedInsights } from "@vercel/speed-insights/next";
@@ -65,6 +66,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className="min-h-screen bg-ink-950 overflow-x-hidden">
         <AuthProvider>
           <PendingEntryMigrator />
+          <BillingReturnHandler />
           <PreferencesProvider>
             <AppLockProvider>
               <SettingsUIProvider>

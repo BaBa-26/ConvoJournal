@@ -69,6 +69,12 @@ model User {
   hiddenWidgets  String[] @default([])
   backgroundImage String?       // "preset:<key>" token or an uploaded data URL; null = none
   surfaceStyle    String   @default("solid")  // "solid" | "translucent" — widget card look
+  // ─── Billing ──────────────────────────────────────────────────────────
+  plan                 String       @default("free") // "free" | "premium"
+  stripeCustomerId     String?      @unique
+  stripeSubscriptionId String?      @unique
+  subscriptionStatus   String?      // "active" | "trialing" | "past_due" | "canceled"
+  currentPeriodEnd     DateTime?
   accounts       Account[]
   sessions       Session[]
   entries        JournalEntry[]
@@ -77,6 +83,7 @@ model User {
   goals          Goal[]
   completions    Completion[]
   pushSubscriptions PushSubscription[]
+  usageEvents        UsageEvent[]
 }
 
 // One row per browser/device a user has enabled notifications on. `endpoint` is the unique
@@ -169,6 +176,18 @@ model Completion {
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, completedAt])
+}
+
+// One row per billable AI action (`analyze`). Backs the rolling 7-day free-tier quota
+// in lib/entitlements.ts — durable and serverless-safe, unlike an in-memory counter.
+model UsageEvent {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  kind      String   // "analyze" | "transcribe"
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
 }
 
 model Reminder {

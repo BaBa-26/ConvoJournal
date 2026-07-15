@@ -9,6 +9,7 @@ import AccountPanel from "./panels/AccountPanel";
 import PrivacyPanel from "./panels/PrivacyPanel";
 import AppearancePanel from "./panels/AppearancePanel";
 import NotificationsPanel from "./panels/NotificationsPanel";
+import UsagePanel from "./panels/UsagePanel";
 import AboutPanel from "./panels/AboutPanel";
 
 export type { SettingsCategory };
@@ -78,15 +79,7 @@ export default function SettingsDialog({
       case "appearance": return <AppearancePanel />;
       case "notifications": return <NotificationsPanel />;
       case "about": return <AboutPanel onClose={onClose} />;
-      case "usage":
-        return (
-          <div className="card text-center py-10">
-            <p className="font-display italic text-lg text-parchment-300">Usage — coming soon</p>
-            <p className="font-mono text-[11px] text-parchment-700 mt-2 leading-6">
-              Your transcription minutes, entries analyzed, and AI activity will live here.
-            </p>
-          </div>
-        );
+      case "usage": return <UsagePanel />;
     }
   };
 

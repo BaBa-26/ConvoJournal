@@ -52,7 +52,7 @@ GRANT USAGE ON SCHEMA public TO app_runtime;
 
 -- User-data tables (RLS-protected below)
 GRANT SELECT, INSERT, UPDATE, DELETE ON
-  "JournalEntry", "Task", "Reminder", "Goal", "Completion", "PushSubscription"
+  "JournalEntry", "Task", "Reminder", "Goal", "Completion", "PushSubscription", "UsageEvent"
   TO app_runtime;
 
 -- NextAuth tables (no RLS — the adapter needs cross-user access at sign-in)
@@ -97,5 +97,11 @@ CREATE POLICY tenant_isolation ON "Completion"
 ALTER TABLE "PushSubscription" ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS tenant_isolation ON "PushSubscription";
 CREATE POLICY tenant_isolation ON "PushSubscription"
+  USING ("userId" = current_setting('app.user_id', true))
+  WITH CHECK ("userId" = current_setting('app.user_id', true));
+
+ALTER TABLE "UsageEvent" ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS tenant_isolation ON "UsageEvent";
+CREATE POLICY tenant_isolation ON "UsageEvent"
   USING ("userId" = current_setting('app.user_id', true))
   WITH CHECK ("userId" = current_setting('app.user_id', true));

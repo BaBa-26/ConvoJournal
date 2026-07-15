@@ -11,6 +11,7 @@ import { loadLocal, appendLocalJournalEntry, loadPrivateVaultEntries } from "@/l
 import { useDataMode } from "@/components/PreferencesProvider";
 import { stripRisk } from "@/lib/crisis";
 import CrisisSupportCard from "@/components/CrisisSupportCard";
+import Paywall from "@/components/Paywall";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -494,6 +495,8 @@ function ReviewPhase({
   showPrivateToggle,
   keepPrivate,
   onTogglePrivate,
+  aiLimited,
+  onUpgrade,
 }: {
   transcript: string;
   parsed: ParsedEntry;
@@ -505,6 +508,8 @@ function ReviewPhase({
   showPrivateToggle: boolean;
   keepPrivate: boolean;
   onTogglePrivate: (v: boolean) => void;
+  aiLimited: boolean;
+  onUpgrade: () => void;
 }) {
   const [showRaw, setShowRaw] = useState(false);
 
@@ -513,6 +518,23 @@ function ReviewPhase({
       {/* Crisis support (transient — never saved with the entry; see lib/crisis.ts) */}
       {parsed.risk && parsed.risk.level !== "none" && (
         <CrisisSupportCard risk={parsed.risk} />
+      )}
+
+      {/* Weekly AI cap reached — journaling stays free; this entry saves as plain text.
+          Upgrade is offered, never forced (tapping opens the paywall; Save still works). */}
+      {aiLimited && (
+        <div className="rounded-xl border border-gold/30 bg-gold/10 p-4 space-y-2.5">
+          <p className="font-mono text-[11px] uppercase tracking-wide text-gold">
+            Weekly AI limit reached
+          </p>
+          <p className="font-mono text-[11px] text-parchment-500 leading-relaxed">
+            You can still save this as a plain journal entry. Upgrade to keep auto-extracting
+            tasks, reminders &amp; goals from every entry.
+          </p>
+          <button onClick={onUpgrade} className="btn-primary w-full text-xs py-2">
+            See upgrade options
+          </button>
+        </div>
       )}
 
       {/* Mood badge */}
@@ -584,8 +606,9 @@ function ReviewPhase({
         </div>
       )}
 
-      {/* No content fallback */}
-      {!parsed.yesterday && !parsed.today && !parsed.tomorrow &&
+      {/* No content fallback — hidden when AI-limited (the banner already explains why
+          nothing was extracted; showing "no structure detected" too would be confusing). */}
+      {!aiLimited && !parsed.yesterday && !parsed.today && !parsed.tomorrow &&
        !parsed.tasks?.length && !parsed.reminders?.length && (
         <div className="card text-center py-6">
           <p className="font-mono text-sm text-parchment-700">
@@ -822,6 +845,11 @@ export default function JournalScreen() {
   const [entries, setEntries]           = useState<JournalEntry[]>([]);
   const [selectedEntry, setSelectedEntry] = useState<JournalEntry | null>(null);
   const [viewingEntries, setViewingEntries] = useState(false);
+  const [paywallTrigger, setPaywallTrigger] = useState<"earned" | "quota" | null>(null);
+  const [lifetimeAvailable, setLifetimeAvailable] = useState(false);
+  // Signed-in free user hit their weekly AI cap: journaling stays free, so we degrade to a
+  // plain-text entry (no AI extraction) rather than blocking the product behind a wall.
+  const [aiLimited, setAiLimited] = useState(false);
 
   // Autocomplete engine — lazy-init once on first use, persists for session
   const engineRef = useRef<AutocompleteEngine | null>(null);
@@ -857,6 +885,14 @@ export default function JournalScreen() {
       .catch(() => {});
   }, [saved, remote]);
 
+  // Lifetime-plan visibility for the Paywall — env-gated server-side (STRIPE_PRICE_LIFETIME).
+  useEffect(() => {
+    fetch("/api/me/entitlements")
+      .then(r => r.json())
+      .then(data => setLifetimeAvailable(Boolean(data.lifetimeAvailable)))
+      .catch(() => {});
+  }, []);
+
   const runAnalysis = useCallback(async (text: string) => {
     setPhase("analyzing");
     setAnalyzeError(null);
@@ -869,6 +905,22 @@ export default function JournalScreen() {
           timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
         }),
       });
+      if (res.status === 402) {
+        // Weekly AI cap reached. Don't throw away what they wrote — keep the entry and
+        // send them to the normal review/save screen as a plain entry. The upgrade offer
+        // is surfaced there as a dismissible banner, never a dead end.
+        setAiLimited(true);
+        setParsed({ tasks: [], reminders: [] });
+        setPhase("review");
+        return;
+      }
+      if (res.status === 401) {
+        const data = await res.json().catch(() => ({}));
+        if (data.error === "signin_required") {
+          signIn(undefined, { callbackUrl: "/" });
+          return;
+        }
+      }
       if (!res.ok) throw new Error("Analysis failed");
       const result: ParsedEntry = await res.json();
       setParsed(result);
@@ -926,6 +978,16 @@ export default function JournalScreen() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ rawContent: activeContent, analysis: persistable }),
         });
+        // First-ever successful analysis for a signed-in free user → earned paywall,
+        // shown instead of the plain "Entry saved" confirmation.
+        if (session) {
+          try {
+            const ent = await fetch("/api/me/entitlements").then(r => r.json());
+            if (ent.plan === "free" && ent.used === 1) setPaywallTrigger("earned");
+          } catch {
+            // Non-fatal: worst case the earned paywall just doesn't fire this once.
+          }
+        }
       } else {
         // On-device mode (signed-in vault): persist the entry + its tasks/reminders/goals locally.
         appendLocalJournalEntry(activeContent, persistable);
@@ -970,7 +1032,23 @@ export default function JournalScreen() {
     setKeepPrivate(false);
     setSelectedEntry(null);
     setViewingEntries(false); // land back on the mic page after a new entry
+    setPaywallTrigger(null);
+    setAiLimited(false);
   }, [reset]);
+
+  // ── Earned paywall (first-ever save, signed-in free user) ─────────────
+  if (saved && paywallTrigger === "earned") {
+    const taskCount = parsed?.tasks?.length ?? 0;
+    const remCount  = parsed?.reminders?.length ?? 0;
+    return (
+      <Paywall
+        trigger="earned"
+        parsedPreview={{ taskCount, reminderCount: remCount }}
+        lifetimeAvailable={lifetimeAvailable}
+        onDismiss={() => setPaywallTrigger(null)}
+      />
+    );
+  }
 
   // ── Saved confirmation ─────────────────────────────────
   if (saved) {
@@ -992,6 +1070,19 @@ export default function JournalScreen() {
           New entry
         </button>
       </div>
+    );
+  }
+
+  // ── Quota paywall (weekly cap hit) ─────────────────────
+  // Opened on demand from the review screen's upgrade banner. Dismissing returns to the
+  // review screen (entry intact) so they can still save it as a plain entry — never a dead end.
+  if (paywallTrigger === "quota") {
+    return (
+      <Paywall
+        trigger="quota"
+        lifetimeAvailable={lifetimeAvailable}
+        onDismiss={() => setPaywallTrigger(null)}
+      />
     );
   }
 
@@ -1081,6 +1172,8 @@ export default function JournalScreen() {
             showPrivateToggle={remote}
             keepPrivate={keepPrivate}
             onTogglePrivate={setKeepPrivate}
+            aiLimited={aiLimited}
+            onUpgrade={() => setPaywallTrigger("quota")}
           />
         )}
       </div>

@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import Groq from "groq-sdk";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
+import { hasUsedAnonymousTry } from "@/lib/entitlements";
 
 const MAX_BYTES = 25 * 1024 * 1024; // 25 MB
 
@@ -21,6 +24,16 @@ export async function POST(req: NextRequest) {
   const contentLength = req.headers.get("content-length");
   if (contentLength && parseInt(contentLength, 10) > MAX_BYTES) {
     return NextResponse.json({ error: "File too large (max 25 MB)" }, { status: 413 });
+  }
+
+  // Anonymous farming guard — the cookie itself is burned by /api/analyze (the
+  // perceived-value action that completes "one earned run"), not here.
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.id && hasUsedAnonymousTry()) {
+    return NextResponse.json(
+      { error: "signin_required", message: "Sign in to keep going." },
+      { status: 401 }
+    );
   }
 
   try {

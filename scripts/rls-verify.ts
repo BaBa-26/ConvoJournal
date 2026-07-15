@@ -17,7 +17,7 @@ if (!OWNER) {
   process.exit(2);
 }
 
-const APP_TABLES = ["JournalEntry", "Task", "Reminder", "Goal", "Completion", "PushSubscription"];
+const APP_TABLES = ["JournalEntry", "Task", "Reminder", "Goal", "Completion", "PushSubscription", "UsageEvent"];
 const AUTH_TABLES = ["User", "Account", "Session", "VerificationToken"];
 
 let failures = 0;
