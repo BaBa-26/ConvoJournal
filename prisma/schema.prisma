@@ -123,7 +123,7 @@ model Task {
   description    String?
   dueDate        DateTime?
   completed      Boolean       @default(false)
-  completedAt    DateTime?     // when `completed` last flipped true — drives the 24h auto-cleanup (updatedAt is unreliable: any edit bumps it)
+  completedAt    DateTime?     // when `completed` last flipped true — drives the 24h active-view hide + is Phase 5's raw material (updatedAt is unreliable: any edit bumps it). NEVER deleted.
   progress       Int           @default(0)   // 0–100; reaches 100 when completed
   priority       String        @default("medium")
   source         String        @default("journal")
@@ -133,6 +133,7 @@ model Task {
   journalEntry   JournalEntry? @relation(fields: [journalEntryId], references: [id], onDelete: SetNull)
 
   @@index([userId])
+  @@index([userId, completedAt]) // completion-ratio / momentum queries (Phase 5) group on completedAt
   @@index([journalEntryId])
 }
 

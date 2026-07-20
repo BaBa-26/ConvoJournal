@@ -10,6 +10,10 @@ import { useSession } from "next-auth/react";
 import type { Task, Reminder } from "@/types";
 import { loadLocal, updateLocal } from "@/lib/localStore";
 import { useDataMode } from "@/components/PreferencesProvider";
+import { localDateToISO } from "@/lib/dates";
+import { COMPLETED_HIDE_MS, readCompletedCutoff, isTaskCleared, isReminderCleared } from "@/lib/completed";
+import { useToast } from "@/components/ToastProvider";
+import Checkbox from "@/components/Checkbox";
 import ItemEditModal, { type NewItem } from "@/components/ItemEditModal";
 import { convertItemRemote, convertItemDemo } from "@/lib/itemConvert";
 
@@ -135,20 +139,23 @@ function CalendarWidget({
 // ─── Day Panel ─────────────────────────────────────────────────────────────────
 
 function DayPanel({
-  day, tasks, reminders, onAddItem, onToggleTask, onEditTask, onEditReminder, onDeleteTask, onDeleteReminder,
+  day, tasks, reminders, cutoffMs, onAddItem, onToggleTask, onEditTask, onEditReminder, onDeleteTask, onDeleteReminder,
 }: {
   day: Date;
   tasks: Task[];
   reminders: Reminder[];
+  cutoffMs: number;
   onAddItem: () => void;
-  onToggleTask: (id: string, completed: boolean) => void;
+  onToggleTask: (id: string, completed: boolean) => Promise<boolean>;
   onEditTask: (task: Task) => void;
   onEditReminder: (reminder: Reminder) => void;
   onDeleteTask: (id: string) => void;
   onDeleteReminder: (id: string) => void;
 }) {
-  const dayTasks     = tasks.filter(t => t.dueDate && isSameDay(parseISO(t.dueDate), day));
-  const dayReminders = reminders.filter(r => isSameDay(parseISO(r.eventDate), day));
+  const now          = Date.now();
+  // Hide items that have left active view (task completed >24h ago; reminder past + fired).
+  const dayTasks     = tasks.filter(t => t.dueDate && isSameDay(parseISO(t.dueDate), day) && !isTaskCleared(t, cutoffMs));
+  const dayReminders = reminders.filter(r => isSameDay(parseISO(r.eventDate), day) && !isReminderCleared(r, now));
   const isEmpty      = dayTasks.length === 0 && dayReminders.length === 0;
   const dayLabel     = isToday(day) ? "today" : format(day, "EEEE, MMM d");
 
@@ -221,29 +228,31 @@ function TaskRow({
   task, onToggle, onEdit, onDelete,
 }: {
   task: Task;
-  onToggle: (id: string, completed: boolean) => void;
+  onToggle: (id: string, completed: boolean) => Promise<boolean>;
   onEdit: (task: Task) => void;
   onDelete: (id: string) => void;
 }) {
   return (
-    <div className="flex items-center gap-3 py-2.5">
-      <button
-        onClick={() => onToggle(task.id, !task.completed)}
-        className={`w-4 h-4 rounded-sm border flex-shrink-0 flex items-center justify-center
-                    transition-all focus:outline-none
-                    ${task.completed ? "bg-gold/25 border-gold/40" : "border-parchment-700 hover:border-parchment-500"}`}
-      >
-        {task.completed && (
-          <span className="text-accent text-[9px] leading-none">✓</span>
-        )}
-      </button>
+    <div className="flex items-start gap-3 py-2.5">
+      <Checkbox
+        checked={task.completed}
+        onToggle={(next) => onToggle(task.id, next)}
+        label={task.completed ? "Mark incomplete" : "Mark complete"}
+      />
       <span
-        className="w-[6px] h-[6px] rounded-full flex-shrink-0"
+        className="mt-2.5 w-[6px] h-[6px] rounded-full flex-shrink-0"
         style={{ backgroundColor: PC[task.priority] ?? PC.medium }}
       />
-      <p className={`flex-1 font-mono text-sm ${task.completed ? "line-through text-parchment-700" : "text-parchment-300"}`}>
-        {task.title}
-      </p>
+      <div className="flex-1 min-w-0">
+        <p className={`font-mono text-sm ${task.completed ? "line-through text-parchment-700" : "text-parchment-300"}`}>
+          {task.title}
+        </p>
+        {task.description && (
+          <p className="font-mono text-[11px] text-parchment-700 mt-0.5 leading-5 whitespace-pre-wrap break-words">
+            {task.description}
+          </p>
+        )}
+      </div>
       <EditButton onClick={() => onEdit(task)} label="Edit task" />
       <button
         onClick={() => onDelete(task.id)}
@@ -265,12 +274,17 @@ function ReminderRow({
   showTime?: boolean;
 }) {
   return (
-    <div className="flex items-center gap-3 py-2.5">
-      <span className="text-tint-past-label/80 font-mono text-[11px] flex-shrink-0 mt-0.5">◎</span>
+    <div className="flex items-start gap-3 py-2.5">
+      <span className="text-tint-past-label/80 font-mono text-[11px] flex-shrink-0 mt-1">◎</span>
       <div className="flex-1 min-w-0">
         <p className="font-mono text-sm text-parchment-300 truncate">{reminder.title}</p>
+        {reminder.description && (
+          <p className="font-mono text-[11px] text-parchment-700 mt-0.5 leading-5 whitespace-pre-wrap break-words">
+            {reminder.description}
+          </p>
+        )}
         {showTime && (
-          <p className="font-mono text-[10px] text-parchment-700">
+          <p className="font-mono text-[10px] text-parchment-700 mt-0.5">
             {format(parseISO(reminder.eventDate), "h:mm a")}
           </p>
         )}
@@ -294,24 +308,26 @@ type FeedItem =
   | { kind: "reminder"; data: Reminder; date: Date };
 
 function UpcomingFeed({
-  tasks, reminders, onToggleTask, onEditTask, onEditReminder, onDeleteTask, onDeleteReminder,
+  tasks, reminders, cutoffMs, onToggleTask, onEditTask, onEditReminder, onDeleteTask, onDeleteReminder,
 }: {
   tasks: Task[];
   reminders: Reminder[];
-  onToggleTask: (id: string, completed: boolean) => void;
+  cutoffMs: number;
+  onToggleTask: (id: string, completed: boolean) => Promise<boolean>;
   onEditTask: (task: Task) => void;
   onEditReminder: (reminder: Reminder) => void;
   onDeleteTask: (id: string) => void;
   onDeleteReminder: (id: string) => void;
 }) {
   const todayStart = startOfDay(new Date());
+  const now = Date.now();
 
   const feed: FeedItem[] = [
     ...tasks
-      .filter(t => t.dueDate && !isBefore(parseISO(t.dueDate), todayStart))
+      .filter(t => t.dueDate && !isBefore(parseISO(t.dueDate), todayStart) && !isTaskCleared(t, cutoffMs))
       .map(t => ({ kind: "task" as const, data: t, date: parseISO(t.dueDate!) })),
     ...reminders
-      .filter(r => !isBefore(parseISO(r.eventDate), todayStart))
+      .filter(r => !isBefore(parseISO(r.eventDate), todayStart) && !isReminderCleared(r, now))
       .map(r => ({ kind: "reminder" as const, data: r, date: parseISO(r.eventDate) })),
   ].sort((a, b) => a.date.getTime() - b.date.getTime());
 
@@ -390,6 +406,7 @@ export default function ScheduleScreen() {
   const { status } = useSession();
   const dataMode = useDataMode();
   const remote = dataMode === "remote";
+  const { toast } = useToast();
   const [month,       setMonth]       = useState(new Date());
   const [selectedDay, setSelectedDay] = useState(new Date());
   const [tasks,       setTasks]       = useState<Task[]>([]);
@@ -397,6 +414,8 @@ export default function ScheduleScreen() {
   const [loading,     setLoading]     = useState(true);
   const [modalDay,    setModalDay]    = useState<Date | null>(null);
   const [editItem,    setEditItem]    = useState<{ kind: "task" | "reminder"; data: Task | Reminder } | null>(null);
+  // 24h active-view cutoff; seeded to the client clock, replaced by the server's on fetch.
+  const [cutoffMs,    setCutoffMs]    = useState(() => Date.now() - COMPLETED_HIDE_MS);
 
   const fetchAll = useCallback(async () => {
     if (status === "loading") return;
@@ -407,14 +426,21 @@ export default function ScheduleScreen() {
       setLoading(false);
       return;
     }
-    const [t, r] = await Promise.all([
-      fetch("/api/tasks").then(r => r.json()),
-      fetch("/api/reminders").then(r => r.json()),
-    ]);
-    setTasks(Array.isArray(t) ? t : []);
-    setReminders(Array.isArray(r) ? r : []);
+    try {
+      const [tRes, rRes] = await Promise.all([fetch("/api/tasks"), fetch("/api/reminders")]);
+      if (!tRes.ok || !rRes.ok) {
+        toast("couldn't load your schedule. pull to refresh or try again in a moment.");
+      }
+      const t = tRes.ok ? await tRes.json() : [];
+      const r = rRes.ok ? await rRes.json() : [];
+      setTasks(Array.isArray(t) ? t : []);
+      setReminders(Array.isArray(r) ? r : []);
+      if (tRes.ok) setCutoffMs(readCompletedCutoff(tRes)); // server-authoritative 24h cutoff
+    } catch {
+      toast("couldn't load your schedule. check your connection and try again.");
+    }
     setLoading(false);
-  }, [remote, status]);
+  }, [remote, status, toast]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
@@ -425,15 +451,28 @@ export default function ScheduleScreen() {
         ...state,
         tasks: state.tasks.map((t) => (t.id === id ? { ...t, completed } : t)),
       }));
-      return;
+      return true;
     }
-    setTasks(prev => prev.map(t => t.id === id ? { ...t, completed } : t));
-    await fetch(`/api/tasks/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ completed }),
-    });
-  }, [remote]);
+    // Non-optimistic: the Checkbox owns the instant flip + rollback, so the parent only commits
+    // on success (which also updates line-through / calendar state via the returned row).
+    try {
+      const res = await fetch(`/api/tasks/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ completed }),
+      });
+      if (res.ok) {
+        const updated: Task = await res.json();
+        setTasks(prev => prev.map(t => t.id === id ? updated : t));
+        return true;
+      }
+      toast("couldn't update that task. try again.");
+      return false;
+    } catch {
+      toast("couldn't reach the server. check your connection and try again.");
+      return false;
+    }
+  }, [remote, toast]);
 
   const handleDeleteTask = useCallback(async (id: string) => {
     if (!remote) {
@@ -441,9 +480,15 @@ export default function ScheduleScreen() {
       updateLocal((state) => ({ ...state, tasks: state.tasks.filter((t) => t.id !== id) }));
       return;
     }
+    const snapshot = tasks;
     setTasks(prev => prev.filter(t => t.id !== id));
-    await fetch(`/api/tasks/${id}`, { method: "DELETE" });
-  }, [remote]);
+    try {
+      const res = await fetch(`/api/tasks/${id}`, { method: "DELETE" });
+      if (!res.ok) { setTasks(snapshot); toast("couldn't delete that task. try again."); }
+    } catch {
+      setTasks(snapshot); toast("couldn't reach the server. check your connection and try again.");
+    }
+  }, [remote, tasks, toast]);
 
   const handleDeleteReminder = useCallback(async (id: string) => {
     if (!remote) {
@@ -451,9 +496,15 @@ export default function ScheduleScreen() {
       updateLocal((state) => ({ ...state, reminders: state.reminders.filter((r) => r.id !== id) }));
       return;
     }
+    const snapshot = reminders;
     setReminders(prev => prev.filter(r => r.id !== id));
-    await fetch(`/api/reminders/${id}`, { method: "DELETE" });
-  }, [remote]);
+    try {
+      const res = await fetch(`/api/reminders/${id}`, { method: "DELETE" });
+      if (!res.ok) { setReminders(snapshot); toast("couldn't delete that reminder. try again."); }
+    } catch {
+      setReminders(snapshot); toast("couldn't reach the server. check your connection and try again.");
+    }
+  }, [remote, reminders, toast]);
 
   const handleSelectDay = useCallback((day: Date) => {
     setSelectedDay(day);
@@ -463,6 +514,11 @@ export default function ScheduleScreen() {
 
   const handleAddItem = useCallback(async (item: NewItem) => {
     const { type, title, date, time, priority, description } = item;
+    // Compose the picker's bare date/time into a real instant (local noon default) — the
+    // raw "YYYY-MM-DD" is what used to 400 the task path, and an empty time used to throw.
+    // A task may be undated (date ""), so dueDate is guarded; a reminder always has a date
+    // (the modal requires it), so eventDate is only composed in the reminder branches below.
+    const dueDate = date ? localDateToISO(date) : null;
     // A goal has no place on the calendar itself — create it (it shows on the Goals screen).
     if (type === "goal") {
       if (!remote) {
@@ -474,10 +530,15 @@ export default function ScheduleScreen() {
         };
         updateLocal((state) => ({ ...state, goals: [goal, ...state.goals] }));
       } else {
-        await fetch("/api/goals", {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ title, unit: item.unit, target: item.target, step: item.step, period: item.period }),
-        });
+        try {
+          const res = await fetch("/api/goals", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ title, unit: item.unit, target: item.target, step: item.step, period: item.period }),
+          });
+          if (!res.ok) toast("couldn't save that goal. check the details and try again.");
+        } catch {
+          toast("couldn't reach the server. check your connection and try again.");
+        }
       }
       return;
     }
@@ -488,7 +549,7 @@ export default function ScheduleScreen() {
           id: `demo-task-${Date.now()}`,
           title,
           description: description || null,
-          dueDate: date ? new Date(date + "T12:00:00").toISOString() : null,
+          dueDate,
           completed: false,
           progress: 0,
           priority: priority as Task["priority"],
@@ -504,7 +565,7 @@ export default function ScheduleScreen() {
           id: `demo-reminder-${Date.now()}`,
           title,
           description: description || null,
-          eventDate: new Date(date + "T" + time + ":00").toISOString(),
+          eventDate: localDateToISO(date, time),
           reminded: false,
           journalEntryId: null,
           createdAt: now,
@@ -514,33 +575,30 @@ export default function ScheduleScreen() {
       }
       return;
     }
-    if (type === "task") {
-      const res = await fetch("/api/tasks", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title,
-          description: description || null,
-          dueDate: date ? new Date(date + "T12:00:00").toISOString() : null,
-          priority,
-        }),
-      });
-      const task = await res.json();
-      setTasks(prev => [...prev, task]);
-    } else {
-      const res = await fetch("/api/reminders", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title,
-          description: description || null,
-          eventDate: new Date(date + "T" + time + ":00").toISOString(),
-        }),
-      });
-      const reminder = await res.json();
-      setReminders(prev => [...prev, reminder]);
+    try {
+      if (type === "task") {
+        const res = await fetch("/api/tasks", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ title, description: description || null, dueDate, priority }),
+        });
+        if (!res.ok) { toast("couldn't save that task. check the details and try again."); return; }
+        const task = await res.json();
+        setTasks(prev => [...prev, task]);
+      } else {
+        const res = await fetch("/api/reminders", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ title, description: description || null, eventDate: localDateToISO(date, time) }),
+        });
+        if (!res.ok) { toast("couldn't save that reminder. check the details and try again."); return; }
+        const reminder = await res.json();
+        setReminders(prev => [...prev, reminder]);
+      }
+    } catch {
+      toast("couldn't reach the server. check your connection and try again.");
     }
-  }, [remote]);
+  }, [remote, toast]);
 
   const handleEditTask     = useCallback((task: Task)         => setEditItem({ kind: "task",     data: task }),     []);
   const handleEditReminder = useCallback((reminder: Reminder) => setEditItem({ kind: "reminder", data: reminder }), []);
@@ -551,18 +609,25 @@ export default function ScheduleScreen() {
     // Type changed → convert: create the target row, delete the source, and move it between
     // this screen's lists (a goal target lands on the Goals screen, so nothing to add here).
     if (item.type !== fromKind) {
-      const created = remote
-        ? await convertItemRemote(fromKind, editId, item)
-        : convertItemDemo(fromKind, editId, item);
-      if (fromKind === "task")     setTasks(prev => prev.filter(t => t.id !== editId));
-      if (fromKind === "reminder") setReminders(prev => prev.filter(r => r.id !== editId));
-      if (created && item.type === "task")     setTasks(prev => [...prev, created as Task]);
-      if (created && item.type === "reminder") setReminders(prev => [...prev, created as Reminder]);
+      try {
+        const created = remote
+          ? await convertItemRemote(fromKind, editId, item)
+          : convertItemDemo(fromKind, editId, item);
+        // Remote convert returns null when the create failed — leave the source in place so it
+        // doesn't vanish from the UI while still living in the DB.
+        if (remote && !created) { toast(`couldn't convert that to a ${item.type}. try again.`); return; }
+        if (fromKind === "task")     setTasks(prev => prev.filter(t => t.id !== editId));
+        if (fromKind === "reminder") setReminders(prev => prev.filter(r => r.id !== editId));
+        if (created && item.type === "task")     setTasks(prev => [...prev, created as Task]);
+        if (created && item.type === "reminder") setReminders(prev => [...prev, created as Reminder]);
+      } catch {
+        toast(`couldn't convert that to a ${item.type}. try again.`);
+      }
       return;
     }
 
     if (item.type === "task") {
-      const dueDate = item.date ? new Date(item.date + "T12:00:00").toISOString() : null;
+      const dueDate = item.date ? localDateToISO(item.date) : null;
       const patch = { title: item.title, priority: item.priority, dueDate, description: item.description || null };
       const apply = (t: Task): Task => ({
         ...t, title: item.title, priority: item.priority as Task["priority"], dueDate, description: item.description || null,
@@ -572,15 +637,21 @@ export default function ScheduleScreen() {
         updateLocal((state) => ({ ...state, tasks: state.tasks.map(t => t.id === editId ? apply(t) : t) }));
         return;
       }
+      const snapshot = tasks;
       setTasks(prev => prev.map(t => t.id === editId ? apply(t) : t)); // optimistic
-      const res = await fetch(`/api/tasks/${editId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(patch),
-      });
-      if (res.ok) { const updated = await res.json(); setTasks(prev => prev.map(t => t.id === editId ? updated : t)); }
+      try {
+        const res = await fetch(`/api/tasks/${editId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(patch),
+        });
+        if (res.ok) { const updated = await res.json(); setTasks(prev => prev.map(t => t.id === editId ? updated : t)); }
+        else { setTasks(snapshot); toast("couldn't save your changes. try again."); }
+      } catch {
+        setTasks(snapshot); toast("couldn't reach the server. check your connection and try again.");
+      }
     } else {
-      const eventDate = new Date(item.date + "T" + item.time + ":00").toISOString();
+      const eventDate = localDateToISO(item.date, item.time);
       const patch = { title: item.title, eventDate, description: item.description || null };
       const apply = (r: Reminder): Reminder => ({ ...r, title: item.title, eventDate, description: item.description || null });
       if (!remote) {
@@ -588,15 +659,21 @@ export default function ScheduleScreen() {
         updateLocal((state) => ({ ...state, reminders: state.reminders.map(r => r.id === editId ? apply(r) : r) }));
         return;
       }
+      const snapshot = reminders;
       setReminders(prev => prev.map(r => r.id === editId ? apply(r) : r)); // optimistic
-      const res = await fetch(`/api/reminders/${editId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(patch),
-      });
-      if (res.ok) { const updated = await res.json(); setReminders(prev => prev.map(r => r.id === editId ? updated : r)); }
+      try {
+        const res = await fetch(`/api/reminders/${editId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(patch),
+        });
+        if (res.ok) { const updated = await res.json(); setReminders(prev => prev.map(r => r.id === editId ? updated : r)); }
+        else { setReminders(snapshot); toast("couldn't save your changes. try again."); }
+      } catch {
+        setReminders(snapshot); toast("couldn't reach the server. check your connection and try again.");
+      }
     }
-  }, [remote, editItem]);
+  }, [remote, editItem, tasks, reminders, toast]);
 
   // Modal entry point — routes to create or update based on whether an id is supplied.
   const handleSaveItem = useCallback(async (item: NewItem, editId?: string) => {
@@ -650,6 +727,7 @@ export default function ScheduleScreen() {
             day={selectedDay}
             tasks={tasks}
             reminders={reminders}
+            cutoffMs={cutoffMs}
             onAddItem={() => setModalDay(selectedDay)}
             onToggleTask={handleToggleTask}
             onEditTask={handleEditTask}
@@ -662,6 +740,7 @@ export default function ScheduleScreen() {
           <UpcomingFeed
             tasks={tasks}
             reminders={reminders}
+            cutoffMs={cutoffMs}
             onToggleTask={handleToggleTask}
             onEditTask={handleEditTask}
             onEditReminder={handleEditReminder}

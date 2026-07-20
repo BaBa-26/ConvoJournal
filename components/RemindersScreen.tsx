@@ -8,6 +8,8 @@ import { useSession, signIn } from "next-auth/react";
 import type { Reminder } from "@/types";
 import { loadLocal, updateLocal } from "@/lib/localStore";
 import { useDataMode } from "@/components/PreferencesProvider";
+import { localDateToISO } from "@/lib/dates";
+import { useToast } from "@/components/ToastProvider";
 import ItemEditModal, { type NewItem } from "@/components/ItemEditModal";
 
 // ─── Reminder card ────────────────────────────────────────────────────────────
@@ -158,6 +160,7 @@ export default function RemindersScreen() {
   const { data: session, status } = useSession();
   const dataMode = useDataMode();
   const remote = dataMode === "remote";
+  const { toast } = useToast();
   const [reminders, setReminders]     = useState<Reminder[]>([]);
   const [loading, setLoading]         = useState(true);
   const [showAdd, setShowAdd]         = useState(false);
@@ -170,10 +173,15 @@ export default function RemindersScreen() {
       setLoading(false);
       return;
     }
-    const res = await fetch("/api/reminders");
-    if (res.ok) setReminders(await res.json());
+    try {
+      const res = await fetch("/api/reminders");
+      if (res.ok) setReminders(await res.json());
+      else toast("couldn't load your reminders. pull to refresh or try again in a moment.");
+    } catch {
+      toast("couldn't load your reminders. check your connection and try again.");
+    }
     setLoading(false);
-  }, [remote, status]);
+  }, [remote, status, toast]);
 
   useEffect(() => { fetchReminders(); }, [fetchReminders]);
 
@@ -195,26 +203,32 @@ export default function RemindersScreen() {
       setShowAdd(false);
       return;
     }
-    const res = await fetch("/api/reminders", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(data),
-    });
-    if (res.ok) {
-      const reminder: Reminder = await res.json();
-      setReminders((prev) =>
-        [...prev, reminder].sort(
-          (a, b) => new Date(a.eventDate).getTime() - new Date(b.eventDate).getTime()
-        )
-      );
-      setShowAdd(false);
+    try {
+      const res = await fetch("/api/reminders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      if (res.ok) {
+        const reminder: Reminder = await res.json();
+        setReminders((prev) =>
+          [...prev, reminder].sort(
+            (a, b) => new Date(a.eventDate).getTime() - new Date(b.eventDate).getTime()
+          )
+        );
+        setShowAdd(false);
+      } else {
+        toast("couldn't save that reminder. check the details and try again.");
+      }
+    } catch {
+      toast("couldn't reach the server. check your connection and try again.");
     }
   };
 
   // Edit an existing reminder via the shared modal.
   const handleUpdate = async (item: NewItem, editId?: string) => {
     if (!editId) return;
-    const eventDate = new Date(item.date + "T" + item.time + ":00").toISOString();
+    const eventDate = localDateToISO(item.date, item.time);
     const apply = (r: Reminder): Reminder => ({
       ...r, title: item.title, eventDate, description: item.description || null,
     });
@@ -228,15 +242,24 @@ export default function RemindersScreen() {
       }));
       return;
     }
+    const snapshot = reminders;
     setReminders((prev) => resort(prev.map((r) => (r.id === editId ? apply(r) : r)))); // optimistic
-    const res = await fetch(`/api/reminders/${editId}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title: item.title, eventDate, description: item.description || null }),
-    });
-    if (res.ok) {
-      const updated: Reminder = await res.json();
-      setReminders((prev) => resort(prev.map((r) => (r.id === editId ? updated : r))));
+    try {
+      const res = await fetch(`/api/reminders/${editId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: item.title, eventDate, description: item.description || null }),
+      });
+      if (res.ok) {
+        const updated: Reminder = await res.json();
+        setReminders((prev) => resort(prev.map((r) => (r.id === editId ? updated : r))));
+      } else {
+        setReminders(snapshot); // rollback
+        toast("couldn't save your changes. try again.");
+      }
+    } catch {
+      setReminders(snapshot); // rollback
+      toast("couldn't reach the server. check your connection and try again.");
     }
   };
 
@@ -246,8 +269,14 @@ export default function RemindersScreen() {
       updateLocal((state) => ({ ...state, reminders: state.reminders.filter((r) => r.id !== id) }));
       return;
     }
+    const snapshot = reminders;
     setReminders((prev) => prev.filter((r) => r.id !== id));
-    await fetch(`/api/reminders/${id}`, { method: "DELETE" });
+    try {
+      const res = await fetch(`/api/reminders/${id}`, { method: "DELETE" });
+      if (!res.ok) { setReminders(snapshot); toast("couldn't delete that reminder. try again."); }
+    } catch {
+      setReminders(snapshot); toast("couldn't reach the server. check your connection and try again.");
+    }
   };
 
   const upcoming = reminders.filter((r) => !isPast(new Date(r.eventDate)) || isToday(new Date(r.eventDate)));

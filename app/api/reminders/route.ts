@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { forUser } from "@/lib/prisma";
 import { requireAuth } from "@/lib/auth";
 import { ReminderCreateSchema, validate } from "@/lib/validators";
+import { coerceToISO } from "@/lib/dates";
 
 export async function GET(req: NextRequest) {
   const auth = await requireAuth();
@@ -34,7 +35,8 @@ export async function POST(req: NextRequest) {
       data: {
         title:       parsed.data.title,
         description: parsed.data.description ?? null,
-        eventDate:   new Date(parsed.data.eventDate),
+        // dateInput guarantees a parseable value; coerceToISO normalizes a bare YYYY-MM-DD to noon.
+        eventDate:   new Date(coerceToISO(parsed.data.eventDate) ?? parsed.data.eventDate),
         userId:      auth.userId,
       },
     });

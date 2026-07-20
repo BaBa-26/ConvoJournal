@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { forUser } from "@/lib/prisma";
 import { requireAuth } from "@/lib/auth";
 import { ReminderUpdateSchema, validate } from "@/lib/validators";
+import { coerceToISO } from "@/lib/dates";
 
 // Verify the reminder belongs to the authenticated user (prevents IDOR). Uses the
 // RLS-scoped client so the row is only visible when app.user_id matches.
@@ -31,7 +32,7 @@ export async function PATCH(
         ...(parsed.data.title       !== undefined && { title:       parsed.data.title }),
         ...(parsed.data.description !== undefined && { description: parsed.data.description ?? null }),
         ...(parsed.data.reminded    !== undefined && { reminded:    parsed.data.reminded }),
-        ...(parsed.data.eventDate   !== undefined && { eventDate:   new Date(parsed.data.eventDate) }),
+        ...(parsed.data.eventDate   !== undefined && { eventDate:   new Date(coerceToISO(parsed.data.eventDate) ?? parsed.data.eventDate) }),
       },
     });
     return NextResponse.json(updated);

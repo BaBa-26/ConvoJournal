@@ -21,20 +21,29 @@ export async function POST(req: NextRequest) {
     const v = validate(AnalyzeSchema, body);
     if (!v.ok) return NextResponse.json(v.error, { status: 400 });
 
-    const { content, timezone } = v.data;
+    const { content, timezone, localDate } = v.data;
 
-    // Resolve "today" in the user's local timezone, not UTC
-    const todayISO = timezone
+    // Resolve "today" in the user's local day: prefer the client-sent localDate, else derive
+    // from the IANA timezone, else fall back to UTC. This anchors relative-date resolution
+    // (both the Gemini prompt and the fallback parser) to the user's calendar day, not UTC.
+    const todayISO = localDate
+      ? localDate
+      : timezone
       ? new Date().toLocaleDateString("sv-SE", { timeZone: timezone })
       : new Date().toISOString().slice(0, 10);
+
+    const session = await getServerSession(authOptions);
+    // First name for the single optional direct-address moment (STEP 0b in lib/gemini.ts).
+    // Null-safe: dev-credentials / nameless accounts yield undefined → plain second person.
+    const firstName = session?.user?.name?.split(" ")[0]?.trim() || undefined;
 
     // Optional context: pending task dedup + active goals for authenticated users
     let geminiContext: {
       todayISO: string;
       pendingTaskTitles: string[];
       activeGoals?: { id: string; title: string; unit: string; target: number; current: number }[];
-    } = { todayISO, pendingTaskTitles: [] };
-    const session = await getServerSession(authOptions);
+      firstName?: string;
+    } = { todayISO, pendingTaskTitles: [], firstName };
     if (session?.user?.id) {
       const db = forUser(session.user.id);
       const [pending, goals] = await Promise.all([
@@ -55,6 +64,7 @@ export async function POST(req: NextRequest) {
         todayISO,
         pendingTaskTitles: pending.map((t) => t.title),
         activeGoals: goals,
+        firstName,
       };
     }
 
@@ -63,7 +73,10 @@ export async function POST(req: NextRequest) {
       analysis = await analyzeWithGemini(content, geminiContext);
     } catch (error) {
       console.error("[analyze] Gemini failed, falling back to regex parser:", error);
-      analysis = parseJournalEntry(content);
+      // Give chrono a timezone-corrected reference: noon of the user's local calendar day,
+      // so a fallback "tomorrow" at night resolves to the right day (not UTC's day).
+      const fallbackNow = new Date(`${todayISO}T12:00:00Z`);
+      analysis = parseJournalEntry(content, fallbackNow);
     }
 
     // Crisis signal: deterministic layer runs on EVERY path (Gemini or fallback)

@@ -20,6 +20,7 @@ import {
 import { useDataMode } from "@/components/PreferencesProvider";
 import { stripRisk, detectCrisisSignals, type RiskSignal } from "@/lib/crisis";
 import CrisisSupportCard from "@/components/CrisisSupportCard";
+import { readDraft, clearDraft, useDraftPersistence, type DraftSnapshot } from "@/hooks/useDraftPersistence";
 import IdlePhase from "@/components/journal/IdlePhase";
 import WritingPhase from "@/components/journal/WritingPhase";
 import RecordingPhase from "@/components/journal/RecordingPhase";
@@ -75,6 +76,35 @@ export default function JournalScreen() {
   const [plainRisk, setPlainRisk] = useState<RiskSignal | null>(null);
   // Attachments for the in-flight entry — survive writing → review.
   const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [restorableDraft, setRestorableDraft] = useState<DraftSnapshot | null>(null);
+
+  // Persist an in-progress draft (transcript/analysis) so a tab-off/refresh doesn't lose it.
+  // Only while there's real content in an analyzing/review phase and it hasn't been saved.
+  const draftPersistable = !!activeContent && !saved && (phase === "analyzing" || phase === "review");
+  useDraftPersistence({ activeContent, parsed, phase, keepPrivate }, draftPersistable);
+
+  // On mount, surface any fresh draft (< 6h) as a resume prompt rather than jumping straight in.
+  useEffect(() => {
+    const d = readDraft();
+    if (d) setRestorableDraft(d);
+  }, []);
+
+  const handleResumeDraft = useCallback(() => {
+    setRestorableDraft((d) => {
+      if (d) {
+        setActiveContent(d.activeContent);
+        setParsed(d.parsed ?? { tasks: [], reminders: [] });
+        setKeepPrivate(d.keepPrivate);
+        setPhase("review");
+      }
+      return null;
+    });
+  }, []);
+
+  const handleDiscardDraft = useCallback(() => {
+    clearDraft();
+    setRestorableDraft(null);
+  }, []);
 
   // Autocomplete engine — lazy-init once, persists for the session.
   const engineRef = useRef<AutocompleteEngine | null>(null);
@@ -196,11 +226,15 @@ export default function JournalScreen() {
       if (remote && keepPrivate) {
         appendLocalJournalEntry(content, persistable, true, attachments);
       } else if (remote) {
-        await fetch("/api/journal", {
+        const res = await fetch("/api/journal", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ rawContent: content, analysis: persistable }),
         });
+        // Don't flip to "saved" on a rejected write — that would tell you it's kept when it
+        // isn't. Throwing here is what surfaces the "your words are still here" recovery.
+        if (!res.ok) throw new Error("save failed");
+
         // No server blob storage yet — attachments persist on this device, keyed by
         // the entry's date, and merge back onto the fetched entry (see above).
         if (attachments.length) {
@@ -213,7 +247,9 @@ export default function JournalScreen() {
       } else {
         appendLocalJournalEntry(content, persistable, false, attachments);
       }
+      // Train the local autocomplete model on every saved entry
       getEngine().train(content);
+      clearDraft(); // the draft is now a real entry — drop the persisted copy
     },
     [remote, keepPrivate, getEngine, attachments]
   );
@@ -295,6 +331,7 @@ export default function JournalScreen() {
 
   const handleDiscard = useCallback(() => {
     reset();
+    clearDraft();
     setParsed(null);
     setSaved(false);
     setSavedPlain(false);
@@ -302,7 +339,7 @@ export default function JournalScreen() {
     setActiveContent("");
     setKeepPrivate(false);
     setSelectedEntry(null);
-    setViewingEntries(false);
+    setViewingEntries(false); // land back on the mic page after a new entry
     setMicDenied(false);
     setReviewMode("structured");
     setWritingPrefill("");
@@ -310,6 +347,7 @@ export default function JournalScreen() {
     setIdleBanner(null);
     setPlainRisk(null);
     setAttachments([]);
+    setRestorableDraft(null);
   }, [reset]);
 
   // ── Saved — the payoff bridges onward (§7.5) ─────────────────────────────
@@ -418,6 +456,28 @@ export default function JournalScreen() {
           </div>
         )}
 
+        {phase === "idle" && !viewingEntries && restorableDraft && (
+          <div className="mb-4 flex items-center justify-between gap-3 px-4 py-3 rounded-xl bg-ink-900 border border-ink-700 animate-fade-in">
+            <p className="font-mono text-[11px] text-parchment-500 leading-snug">
+              you have an unsaved entry from earlier
+            </p>
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <button
+                onClick={handleResumeDraft}
+                className="font-mono text-[11px] uppercase tracking-wide text-gold hover:text-gold-light transition-colors focus:outline-none"
+              >
+                resume
+              </button>
+              <span className="text-parchment-800">·</span>
+              <button
+                onClick={handleDiscardDraft}
+                className="font-mono text-[11px] uppercase tracking-wide text-parchment-700 hover:text-parchment-500 transition-colors focus:outline-none"
+              >
+                discard
+              </button>
+            </div>
+          </div>
+        )}
         {phase === "idle" && !viewingEntries && (
           <IdlePhase
             onStart={handleStart}

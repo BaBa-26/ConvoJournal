@@ -100,6 +100,9 @@ export interface ParsedEntry {
   reminders: ExtractedReminder[];
   goals?: ExtractedGoal[];        // brand-new goals to create from the entry
   goalUpdates?: GoalUpdate[];     // increments against the user's existing active goals
+  // Which analyzer produced this result: Gemini (primary) or the local regex parser
+  // (fallback, when Gemini errors). Set server-side, never by the model — UI/telemetry only.
+  source?: "gemini" | "fallback";
   // Transient crisis signal (see lib/crisis.ts). Lives only in the in-flight
   // /api/analyze response — never persisted to the DB or localStorage, never logged.
   risk?: import("@/lib/crisis").RiskSignal;

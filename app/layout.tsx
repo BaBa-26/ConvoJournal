@@ -8,6 +8,7 @@ import PreferencesProvider from "@/components/PreferencesProvider";
 import AppLockProvider from "@/components/AppLockProvider";
 import PendingEntryMigrator from "@/components/PendingEntryMigrator";
 import SettingsUIProvider from "@/components/settings/SettingsUIProvider";
+import { ToastProvider } from "@/components/ToastProvider";
 import ServiceWorkerRegister from "@/components/ServiceWorkerRegister";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 import "./globals.css";
@@ -68,19 +69,21 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <PreferencesProvider>
             <AppLockProvider>
               <SettingsUIProvider>
-                <div className="md:flex md:h-screen md:overflow-hidden">
-                  <SideNav />
+                <ToastProvider>
+                  <div className="md:flex md:h-screen md:overflow-hidden">
+                    <SideNav />
 
-                  <div className="flex-1 flex flex-col md:overflow-y-auto">
-                    {/* min-h-full (not 0) on desktop so screens can center content
-                        vertically instead of top-loading into a void. */}
-                    <div className="max-w-[430px] md:max-w-2xl mx-auto w-full min-h-screen md:min-h-full flex flex-col relative">
-                      {children}
+                    <div className="flex-1 flex flex-col md:overflow-y-auto">
+                      {/* min-h-full (not 0) on desktop so screens can center content
+                          vertically instead of top-loading into a void. */}
+                      <div className="max-w-[430px] md:max-w-2xl mx-auto w-full min-h-screen md:min-h-full flex flex-col relative">
+                        {children}
+                      </div>
                     </div>
                   </div>
-                </div>
-                <ProfileButton />
-                <BottomNav />
+                  <ProfileButton />
+                  <BottomNav />
+                </ToastProvider>
               </SettingsUIProvider>
             </AppLockProvider>
           </PreferencesProvider>

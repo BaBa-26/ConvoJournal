@@ -155,8 +155,9 @@ export async function middleware(req: NextRequest) {
 }
 
 export const config = {
-  // Run on all routes except static files and Next internals
+  // Run on all routes except static files, Next internals, and the Sentry event tunnel
+  // (/monitoring) — the tunnel must reach Sentry unimpeded by rate limiting / headers.
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|icon-.*\\.png).*)",
+    "/((?!monitoring|_next/static|_next/image|favicon.ico|icon-.*\\.png).*)",
   ],
 };

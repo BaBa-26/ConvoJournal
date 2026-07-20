@@ -114,7 +114,7 @@ function splitList(phrase: string): string[] {
   return rough.filter((seg, i) => i === 0 || SEGMENT_VERB_RE.test(seg));
 }
 
-function extractTasks(text: string): ExtractedTask[] {
+function extractTasks(text: string, now: Date): ExtractedTask[] {
   const tasks: ExtractedTask[] = [];
   const seen = new Set<string>();
 
@@ -145,8 +145,8 @@ function extractTasks(text: string): ExtractedTask[] {
         if (!title || seen.has(title.toLowerCase())) continue;
         seen.add(title.toLowerCase());
 
-        const parsed = chrono.parseDate(piece, new Date(), { forwardDate: true })
-          ?? chrono.parseDate(context, new Date(), { forwardDate: true });
+        const parsed = chrono.parseDate(piece, now, { forwardDate: true })
+          ?? chrono.parseDate(context, now, { forwardDate: true });
 
         let priority: "high" | "medium" | "low" = "medium";
         if (URGENT_RE.test(context)) priority = "high";
@@ -178,10 +178,10 @@ function isPastEvent(sentence: string): boolean {
   return PAST_VERB_RE.test(sentence) && !FUTURE_CUE_RE.test(sentence) && !TOMORROW_KW.test(sentence);
 }
 
-function extractReminders(text: string, sentences: string[]): ExtractedReminder[] {
+function extractReminders(text: string, sentences: string[], now: Date): ExtractedReminder[] {
   const reminders: ExtractedReminder[] = [];
 
-  const startOfToday = new Date();
+  const startOfToday = new Date(now);
   startOfToday.setHours(0, 0, 0, 0);
 
   // Locate each sentence's span so chrono results can be grouped per sentence.
@@ -199,7 +199,7 @@ function extractReminders(text: string, sentences: string[]): ExtractedReminder[
   // fragments in one sentence ("tomorrow ... at 2pm") describe the SAME event, and
   // the fragment with a certain clock time is the most specific one.
   const bySentence = new Map<string, { result: chrono.ParsedResult; sentence: string }>();
-  for (const result of chrono.parse(text, new Date(), { forwardDate: true })) {
+  for (const result of chrono.parse(text, now, { forwardDate: true })) {
     const span = spanAt(result.index);
     if (!span) continue;
     const existing = bySentence.get(span.sentence);
@@ -308,11 +308,15 @@ export function detectMood(text: string): string | undefined {
 
 // ── Entry point ───────────────────────────────────────────────────────────────
 
-export function parseJournalEntry(text: string): AnalysisResult {
+// `now` is the reference instant chrono resolves relative dates against. The caller
+// (app/api/analyze) passes a timezone-corrected reference (local noon of the user's
+// calendar day) so a fallback "tomorrow" at 11pm doesn't land on the wrong day the way
+// a UTC `new Date()` does on Vercel. Defaults to `new Date()` for direct/local callers.
+export function parseJournalEntry(text: string, now: Date = new Date()): AnalysisResult {
   const sentences = splitSentences(text);
   const sections = splitSections(sentences);
-  const tasks = extractTasks(text);
-  const reminders = extractReminders(text, sentences);
+  const tasks = extractTasks(text, now);
+  const reminders = extractReminders(text, sentences, now);
   const mood = detectMood(text);
 
   return {
@@ -322,5 +326,6 @@ export function parseJournalEntry(text: string): AnalysisResult {
     mood,
     tasks,
     reminders,
+    source: "fallback",
   };
 }

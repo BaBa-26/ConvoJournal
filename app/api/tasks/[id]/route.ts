@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { forUser } from "@/lib/prisma";
 import { requireAuth } from "@/lib/auth";
 import { TaskUpdateSchema, validate } from "@/lib/validators";
+import { coerceToISO } from "@/lib/dates";
 
 // Verify the task belongs to the authenticated user (prevents IDOR). Uses the
 // RLS-scoped client so the row is only visible when app.user_id matches.
@@ -39,7 +40,8 @@ export async function PATCH(
     if (parsed.data.description !== undefined) data.description = parsed.data.description ?? null;
     if (parsed.data.priority    !== undefined) data.priority    = parsed.data.priority;
     if (parsed.data.dueDate  !== undefined) {
-      data.dueDate = parsed.data.dueDate ? new Date(parsed.data.dueDate) : null;
+      const iso = coerceToISO(parsed.data.dueDate);
+      data.dueDate = iso ? new Date(iso) : null;
     }
 
     // Keep `completed` and `progress` in sync.

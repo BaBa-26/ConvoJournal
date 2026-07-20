@@ -106,15 +106,19 @@ async function run() {
     await prismaAdmin.user.update({ where: { id: u.id }, data: { lastGoalNudge: now } });
   }
 
-  // ── 3. Cleanup: clear completed tasks/goals ~24h after completion ──────────
-  // The heavy row is deleted (saves space, keeps metrics to recent activity), but the
-  // durable Completion record it wrote stays, so the weekly momentum bar still credits it.
-  // Old Completions are pruned past 60 days (only recent windows feed the bar).
-  const cleanupCutoff = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-  const completionCutoff = new Date(now.getTime() - 60 * 24 * 60 * 60 * 1000);
-  const [tasksCleared, goalsCleared, completionsPruned] = await Promise.all([
-    prismaAdmin.task.deleteMany({ where: { completed: true, completedAt: { lt: cleanupCutoff } } }),
-    prismaAdmin.goal.deleteMany({ where: { completed: true, completedAt: { lt: cleanupCutoff } } }),
+  // ── 3. Completed-item lifecycle ────────────────────────────────────────────
+  // TASKS are NEVER deleted (BUILD_SPEC 0c): `completedAt` on the live row is Phase 5's raw
+  // material (completion ratio, momentum ribbon), and completed tasks leave *active views* via a
+  // client-side 24h window, not by deletion (see lib/completed.ts). Do NOT add a task delete here.
+  //
+  // GOALS keep their Phase 1 lifecycle: the Goals screen renders every goal it's given, so a
+  // completed goal is hard-deleted ~24h after completion to keep that list from piling up — its
+  // durable Completion shadow survives, so the weekly momentum bar still credits the win. Old
+  // Completions are pruned past 60 days (only recent windows feed the bar).
+  const goalCleanupCutoff = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+  const completionCutoff  = new Date(now.getTime() - 60 * 24 * 60 * 60 * 1000);
+  const [goalsCleared, completionsPruned] = await Promise.all([
+    prismaAdmin.goal.deleteMany({ where: { completed: true, completedAt: { lt: goalCleanupCutoff } } }),
     prismaAdmin.completion.deleteMany({ where: { completedAt: { lt: completionCutoff } } }),
   ]);
 
@@ -123,7 +127,6 @@ async function run() {
     goalPushes,
     checkedReminders: dueReminders.length,
     checkedUsers: users.length,
-    tasksCleared: tasksCleared.count,
     goalsCleared: goalsCleared.count,
     completionsPruned: completionsPruned.count,
   };

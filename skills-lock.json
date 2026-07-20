@@ -145,6 +145,21 @@
       "skillPath": "skills/misc/setup-pre-commit/SKILL.md",
       "computedHash": "f2ce8663857d919cf7e4146cd716b0aee1757b85123b758e6e7d98fcbaf14054"
     },
+    "stripe-best-practices": {
+      "source": "docs.stripe.com",
+      "sourceType": "well-known",
+      "computedHash": "7ff3b3441a1b1396584f85c3c7304ca4c28f2af5622a1932a046c86739063fd3"
+    },
+    "stripe-directory": {
+      "source": "docs.stripe.com",
+      "sourceType": "well-known",
+      "computedHash": "58d8c458beaa92877ed2f0a622af65a0a91e2804efcc4188ac87a35780015361"
+    },
+    "stripe-projects": {
+      "source": "docs.stripe.com",
+      "sourceType": "well-known",
+      "computedHash": "c084f4044a8d267c096e8391935e5547004a9ab003eaf34ee606041d2485f6c3"
+    },
     "tdd": {
       "source": "mattpocock/skills",
       "sourceType": "github",
@@ -180,6 +195,17 @@
       "sourceType": "github",
       "skillPath": "skills/deprecated/ubiquitous-language/SKILL.md",
       "computedHash": "4828c4957014e7d9c1fd62d65e92264d6d46808089953e14d1bbba5a92dfff4d"
+    },
+    "upgrade-stripe": {
+      "source": "docs.stripe.com",
+      "sourceType": "well-known",
+      "computedHash": "46bb3c16878f93b953ed901b950686d64f04f90c67400bf31e1a0d7790d889df"
+    },
+    "vibe-security": {
+      "source": "raroque/vibe-security-skill",
+      "sourceType": "github",
+      "skillPath": "vibe-security/SKILL.md",
+      "computedHash": "cc047d5ac9ba92065ce7464f4ea6ce48ec52fb907caacd564019915b2a847fa4"
     },
     "writing-beats": {
       "source": "mattpocock/skills",

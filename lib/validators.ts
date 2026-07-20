@@ -1,9 +1,19 @@
 import { z } from "zod";
 
+// A date from a picker reaches us either as a full RFC-3339 instant (the normal path — the
+// client composes one via `localDateToISO`) or, defensively, as a bare `YYYY-MM-DD`. Accept
+// both so a stray date-only value is a normalized instant server-side (`coerceToISO` in the
+// route), not a silent 400. Being strict about a format your own form can emit is a bug, not
+// security.
+const dateInput = z.string().max(40).refine(
+  (s) => /^\d{4}-\d{2}-\d{2}$/.test(s) || !isNaN(Date.parse(s)),
+  "Invalid date",
+);
+
 export const TaskCreateSchema = z.object({
   title:       z.string().min(1, "Title required").max(500),
   description: z.string().max(2000).nullish(),
-  dueDate:     z.string().datetime({ offset: true }).nullish(),
+  dueDate:     dateInput.nullish(),
   priority:    z.enum(["high", "medium", "low"]).default("medium"),
   source:      z.string().max(50).optional(),
 });
@@ -14,20 +24,20 @@ export const TaskUpdateSchema = z.object({
   completed:   z.boolean().optional(),
   progress:    z.number().int().min(0).max(100).optional(),
   priority:    z.enum(["high", "medium", "low"]).optional(),
-  dueDate:     z.string().datetime({ offset: true }).nullish().optional(),
+  dueDate:     dateInput.nullish().optional(),
 });
 
 export const ReminderCreateSchema = z.object({
   title:       z.string().min(1, "Title required").max(500),
   description: z.string().max(2000).nullish(),
-  eventDate:   z.string().datetime({ offset: true }),
+  eventDate:   dateInput,
 });
 
 export const ReminderUpdateSchema = z.object({
   title:       z.string().min(1).max(500).optional(),
   description: z.string().max(2000).nullish(),
   reminded:    z.boolean().optional(),
-  eventDate:   z.string().datetime({ offset: true }).optional(),
+  eventDate:   dateInput.optional(),
 });
 
 export const GoalCreateSchema = z.object({
@@ -152,6 +162,9 @@ export const UserPreferencesUpdateSchema = z.object({
 export const AnalyzeSchema = z.object({
   content:  z.string().min(1, "Content required").max(10_000),  // ~10 min of speech, enough for a journal
   timezone: z.string().max(100).optional(),
+  // The client's local calendar day (`YYYY-MM-DD`). Preferred over deriving from `timezone`
+  // server-side — it's what anchors relative-date resolution to the user's day, not UTC.
+  localDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Expected YYYY-MM-DD").optional(),
 });
 
 // Reusable helper — returns parsed data or throws a Response-ready error

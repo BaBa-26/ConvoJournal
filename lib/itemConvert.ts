@@ -1,14 +1,15 @@
 import type { Task, Reminder, Goal } from "@/types";
 import type { NewItem, ItemKind } from "@/components/ItemEditModal";
 import { updateLocal } from "@/lib/localStore";
+import { localDateToISO } from "@/lib/dates";
 
 // Category conversion — re-homes an item between the task / reminder / goal tables.
 // A task and a reminder and a goal live in different tables, so "converting" means:
 // create a fresh row in the target table from the edited fields, then delete the source.
 // Both the remote (API) and demo (localStore) paths are provided so the two behave alike.
 
-const isoDue   = (date: string) => (date ? new Date(date + "T12:00:00").toISOString() : null);
-const isoEvent = (date: string, time: string) => new Date(date + "T" + (time || "09:00") + ":00").toISOString();
+const isoDue   = (date: string) => (date ? localDateToISO(date) : null);
+const isoEvent = (date: string, time: string) => localDateToISO(date, time || "09:00");
 
 const ENDPOINT: Record<ItemKind, string> = {
   task:     "/api/tasks",

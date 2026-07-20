@@ -1,6 +1,48 @@
 # Progress (ConvoJournal) — Handoff Doc
 
-Last updated: 2026-07-10. **Read "🟢 Latest" directly below for current state.** Everything below it is **shipped history** — kept for context, not active work.
+Last updated: 2026-07-20. **Read "🟢 Latest" directly below for current state.** Everything below it is **shipped history** — kept for context, not active work.
+
+---
+
+## ⏸ Parked (2026-07-15) — Stripe billing / paywall — BUILT, NOT MERGED, NOT in prod
+
+**On branch `feature/billing-paywall` only** (committed `035b7ed`, pushed to origin — open the PR at github.com/BaBa-26/Progress/pull/new/feature/billing-paywall). Deliberately kept OFF `claude/nifty-hamilton-ISukC` until the rest of the release is ready. **Nothing here is in prod, and the schema has NOT been pushed to the prod DB.**
+
+**What it adds (all on that branch):**
+- **Schema** — `User` billing columns (`plan`, `stripeCustomerId`, `stripeSubscriptionId`, `subscriptionStatus`, `currentPeriodEnd`) + a `UsageEvent` table (backs the quota). `prisma/rls.sql` + `scripts/rls-verify.ts` extended to cover `UsageEvent`.
+- **Entitlements** (`lib/entitlements.ts`) — rolling 7-day free quota (`FREE_WEEKLY_ANALYSIS_LIMIT`, default 3 `analyze`/wk), premium = unlimited, anonymous one-free-try via a signed httpOnly cookie. `GET /api/me/entitlements` exposes plan/usage/subscription status/renewal.
+- **Gating** — `/api/analyze` → `402` at quota, `401` (`signin_required`) for anonymous past their one run; `/api/transcribe` mirrors the anonymous gate. Usage recorded only after a successful call. **Journaling stays free**: hitting the cap degrades to a plain-text save with a dismissible upgrade banner (no dead-end wall — this was a deliberate anti-churn choice).
+- **Stripe** (`lib/stripe.ts`) — `/api/billing/checkout` (7-day trial on annual only), `/api/billing/portal` (manage/cancel), signature-verified `/api/billing/webhook` (subscribe/cancel/lifetime → flips `User.plan`; uses `prismaAdmin` for the cross-user customer lookup; bypasses rate limiting in `middleware.ts`).
+- **UI** — `Paywall.tsx` (annual preselected, "Save 55%" + struck-through monthly, value bullets, trial-aware CTA + "No payment due today · Cancel anytime"), `BillingReturnHandler.tsx` (polls entitlements on `/?billing=success` → "Upgraded" toast), and a **"Plan & usage" settings tab** (`UsagePanel.tsx` — usage bar + "Manage subscription" portal link; the old "Usage — soon" placeholder is now real).
+
+**Verified** end-to-end on a Neon **staging branch** (not prod): checkout → webhook premium flip (correct `currentPeriodEnd`) → portal → cancel downgrade; quota `402`; anonymous one-try-then-`401`; annual trial = **$0 due today** vs monthly charged immediately. `tsc --noEmit` clean.
+
+**Before merging / launch:**
+1. `npm run db:push` the billing schema to prod, then **re-apply `prisma/rls.sql`** (adds the `UsageEvent` grant + policy — `db:push` drops these).
+2. Set prod env: `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` (from the prod webhook endpoint, not the CLI), `STRIPE_PRICE_MONTHLY`, `STRIPE_PRICE_YEARLY`, `STRIPE_PRICE_LIFETIME` (blank = hidden), `NEXT_PUBLIC_APP_URL`, `FREE_WEEKLY_ANALYSIS_LIMIT`.
+3. **Create a real monthly Stripe price** — `STRIPE_PRICE_MONTHLY` and `STRIPE_PRICE_YEARLY` currently point at the SAME id (the yearly one), so monthly would over-charge and the "Save 55%" copy wouldn't match reality.
+4. Register the prod webhook in the Stripe dashboard → `https://<domain>/api/billing/webhook`.
+5. Reword or actually gate the "sync across devices" paywall bullet (sync is tied to being signed in, not to premium).
+
+_Local testing note:_ the branch was tested by pointing `.env.development.local` (gitignored) at the staging Neon branch (`RLS_APP_URL`/`RLS_OWNER_URL` in `.env`) and running `stripe listen --forward-to localhost:3000/api/billing/webhook`. That override file was removed from the working tree; recreate it to resume.
+
+---
+
+## 🟢 Latest (2026-07-20) — Phase 0 + 1b committed; billing skeleton parked; Sentry wired
+
+**On `claude/nifty-hamilton-ISukC`, COMMITTED (typecheck-clean), NOT deployed.** This session took the working tree from "lots of uncommitted work" to a clean, safe commit after a security audit (`vibe-security` — no vulns found: no exposed secrets, RLS correctly extended for anything committed, Sentry is PII-safe).
+
+**What was committed:**
+- **Phase 0a–0c** (see the 2026-07-16 history below): `lib/dates.ts`, `components/Checkbox.tsx`, `components/ToastProvider.tsx`, `lib/completed.ts`, the `x-completed-cutoff` active-view hide, tasks-never-deleted (cron no longer deletes tasks), `@@index([userId, completedAt])` on `Task`.
+- **Phase 1b — DONE (was designed-only):** `lib/gemini.ts` now enforces design-§7 **voice rules** (second person, never "the user") + optional **`firstName` direct-address** (once, `tomorrow` field only, per the resolved name A/B). **Fallback-parser tz fix:** `parseJournalEntry(text, now?)` takes a reference instant; `/api/analyze` passes local-noon of the user's calendar day (new `localDate` request field → else IANA `timezone` → else UTC).
+- **Observability — Sentry** (`instrumentation.ts`/`instrumentation-client.ts`, `sentry.server/edge.config.ts`, `withSentryConfig` in `next.config.js`, same-origin `/monitoring` tunnel so CSP `connect-src 'self'` is untouched). **Inert until `SENTRY_DSN`/`NEXT_PUBLIC_SENTRY_DSN` are set.** `sendDefaultPii:false`, no `includeLocalVariables`, Session Replay off — journal text must never ride a stack frame. Added `@sentry/nextjs` dep.
+- Misc UX hooks (`useWakeLock`, `useDraftPersistence`, `useRecorder` tweaks), toast wiring across screens, `RemindersScreen`/`ScheduleScreen`/`TasksScreen` updates.
+
+**⏸ Parked in a git stash (NOT committed) — Phase 2 entitlements/usage skeleton.** A *newer, lighter* billing skeleton than the full paywall on `feature/billing-paywall`: `lib/entitlements.ts`, `lib/usage.ts`, `app/api/entitlements/route.ts`, `hooks/useEntitlements.ts`, `Subscription` + `UsageEvent` Prisma models, matching `prisma/rls.sql` policies, and a **quota gate in `/api/analyze`** (`402` at cap). **Excluded because it's a deploy landmine:** the gate calls `getEntitlements()` → `db.usageEvent.count(...)` un-guarded, so deploying it before `UsageEvent` is `db:push`'d + RLS re-applied would **500 every authenticated analyze call** — breaking the core journaling flow. Recover with `git stash show -p stash@{0}` / `git stash pop`. **Before restoring:** reconcile with the `feature/billing-paywall` skeleton (they overlap but differ — that one puts billing columns on `User`; this one uses a separate `Subscription` model), then push schema + re-apply RLS before wiring the gate.
+
+**Loose docs left UNSTAGED on purpose** (`build.md`, `security check.md`, `app/# AI_FEATURES.md`, `app/prompt.md`, `Operating Manual for aikido.md`, `.continue/`, `tsconfig.tsbuildinfo`) — not committed.
+
+**Next steps:** (1) **deploy** — `scripts/backfill-completedat.ts` + `db:push` the `Task` index, re-apply `prisma/rls.sql` if a table was recreated, `npx tsc --noEmit`, `npx vercel --prod --yes` (Git auto-deploy is broken). Optionally set the Sentry env to turn monitoring on. (2) fix the **mobile crisis-card overlap** (safety-critical). (3) restore + reconcile billing when ready. (4) HIGH-1 Next.js upgrade. (5) Phase 3 per-item notifications. (6) local-mode saves don't populate Tasks/Goals/Calendar.
 
 ---
 

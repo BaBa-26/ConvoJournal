@@ -1,7 +1,11 @@
+const { withSentryConfig } = require("@sentry/nextjs");
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   experimental: {
     serverComponentsExternalPackages: ["@prisma/client", "prisma"],
+    // Next 14.2: instrumentation.ts (Sentry server/edge init) requires this opt-in.
+    instrumentationHook: true,
   },
 
   async headers() {
@@ -43,4 +47,15 @@ const nextConfig = {
   },
 };
 
-module.exports = nextConfig;
+// Route browser events through a same-origin tunnel (/monitoring) so the CSP `connect-src 'self'`
+// needs no Sentry ingest host, and ad-blockers don't drop error reports. Source-map upload only
+// runs when SENTRY_AUTH_TOKEN is present (CI/Vercel) — the local build never blocks on it.
+module.exports = withSentryConfig(nextConfig, {
+  org: process.env.SENTRY_ORG,
+  project: process.env.SENTRY_PROJECT,
+  silent: !process.env.CI,
+  tunnelRoute: "/monitoring",
+  widenClientFileUpload: true, // upload a wider set of client files for readable stack traces
+  sourcemaps: { disable: !process.env.SENTRY_AUTH_TOKEN },
+});
+

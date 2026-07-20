@@ -1,7 +1,7 @@
 /**
  * Read-only structural verification of the RLS setup — no writes, no test data, safe to run
  * against PROD. Confirms: app_runtime has no bypass, grants exist, RLS is enabled with the right
- * policies on exactly the 6 app tables, and the NextAuth tables are correctly left open.
+ * policies on every app (user-data) table, and the NextAuth tables are correctly left open.
  *
  * Usage:
  *   RLS_OWNER_URL="<owner connection string>" npx tsx scripts/rls-verify.ts

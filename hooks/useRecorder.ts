@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useCallback, useEffect } from "react";
+import { acquireWakeLock, releaseWakeLock } from "@/hooks/useWakeLock";
 
 export type RecorderState = "idle" | "recording" | "transcribing";
 
@@ -86,11 +87,12 @@ export function useRecorder(): UseRecorderReturn {
     }
   }, []);
 
-  // Clean up timer + meter on unmount
+  // Clean up timer + meter + wake lock on unmount (e.g. navigating away mid-recording).
   useEffect(
     () => () => {
       if (timerRef.current) clearInterval(timerRef.current);
       stopLevelMeter();
+      void releaseWakeLock();
     },
     [stopLevelMeter]
   );
@@ -110,14 +112,17 @@ export function useRecorder(): UseRecorderReturn {
       const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
       mediaRecorderRef.current = recorder;
 
-      recorder.ondataavailable = (e) => {
-        if (e.data.size > 0) chunksRef.current.push(e.data);
-      };
-
-      recorder.onstop = async () => {
+      // Single finalize path — reached by a normal stop, an error, or the OS ending the mic
+      // track (manual lock / incoming call). The `finalized` guard makes it run exactly once,
+      // so whatever audio was captured is transcribed and never silently dropped.
+      let finalized = false;
+      const finalize = async () => {
+        if (finalized) return;
+        finalized = true;
         stream.getTracks().forEach((t) => t.stop());
         if (timerRef.current) clearInterval(timerRef.current);
         stopLevelMeter();
+        void releaseWakeLock();
 
         // Cancelled take — drop the audio, no transcription.
         if (cancelledRef.current) {
@@ -127,8 +132,10 @@ export function useRecorder(): UseRecorderReturn {
           return;
         }
 
-        setState("transcribing");
+        // Interrupted before any audio arrived — nothing to transcribe.
+        if (chunksRef.current.length === 0) { setState("idle"); return; }
 
+        setState("transcribing");
         try {
           const blob = new Blob(chunksRef.current, { type: mimeType || "audio/webm" });
           const ext = (mimeType || "audio/webm").split("/")[1].split(";")[0];
@@ -147,9 +154,28 @@ export function useRecorder(): UseRecorderReturn {
         }
       };
 
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) chunksRef.current.push(e.data);
+      };
+      recorder.onstop = finalize;
+
+      // Resilience: an error or the OS reclaiming the mic must still preserve captured audio.
+      // Prefer recorder.stop() (flushes the last chunk) → onstop → finalize; if the recorder
+      // can't stop cleanly, finalize directly with what we have.
+      const recover = () => {
+        if (recorder.state !== "inactive") {
+          try { recorder.stop(); } catch { void finalize(); }
+        } else {
+          void finalize();
+        }
+      };
+      recorder.onerror = recover;
+      stream.getAudioTracks().forEach((track) => track.addEventListener("ended", recover));
+
       recorder.start(250);
       startLevelMeter(stream);
       setState("recording");
+      void acquireWakeLock();
 
       // Elapsed timer
       timerRef.current = setInterval(() => {
@@ -159,6 +185,7 @@ export function useRecorder(): UseRecorderReturn {
     } catch {
       setError("Microphone access denied. Please allow microphone access and try again.");
       setState("idle");
+      void releaseWakeLock();
       return false;
     }
   }, [startLevelMeter, stopLevelMeter]);
@@ -179,6 +206,7 @@ export function useRecorder(): UseRecorderReturn {
   }, [state]);
 
   const reset = useCallback(() => {
+    void releaseWakeLock();
     setTranscript("");
     setError(null);
     setElapsed(0);

@@ -7,6 +7,10 @@ import type { Task, TaskFilter } from "@/types";
 import { loadLocal, updateLocal } from "@/lib/localStore";
 import { useDataMode } from "@/components/PreferencesProvider";
 import { computeTaskStats } from "@/lib/taskStats";
+import { localDateToISO } from "@/lib/dates";
+import { COMPLETED_HIDE_MS, readCompletedCutoff, isTaskCleared } from "@/lib/completed";
+import { useToast } from "@/components/ToastProvider";
+import Checkbox from "@/components/Checkbox";
 import DraggableProgressBar from "@/components/DraggableProgressBar";
 import GoalsSection from "@/components/GoalsSection";
 import EmptyState from "@/components/ui/EmptyState";
@@ -56,7 +60,7 @@ function TaskRow({
 }: {
   task: Task;
   showProgress: boolean;
-  onToggle: (id: string, completed: boolean) => void;
+  onToggle: (id: string, completed: boolean) => Promise<boolean>;
   onEdit: (task: Task) => void;
   onDelete: (id: string) => void;
   onProgressCommit: (id: string, progress: number) => void;
@@ -82,30 +86,12 @@ function TaskRow({
         }
       `}
     >
-      {/* Checkbox — 44px touch target via padding */}
-      <button
-        onClick={() => onToggle(task.id, !task.completed)}
-        className="flex-shrink-0 -ml-1 p-1 rounded-lg focus:outline-none"
-        aria-label={task.completed ? "Mark incomplete" : "Mark complete"}
-      >
-        <div
-          className={`
-            w-5 h-5 rounded-md border-2 flex items-center justify-center
-            transition-all duration-150
-            ${task.completed
-              ? "border-transparent bg-accent"
-              : "border-parchment-700 hover:border-accent/60"
-            }
-          `}
-        >
-          {task.completed && (
-            <svg width="11" height="9" viewBox="0 0 11 9" fill="none">
-              <path d="M1 4L4 7.5L10 1" stroke="#0f0e0b" strokeWidth="2"
-                    strokeLinecap="round" strokeLinejoin="round"/>
-            </svg>
-          )}
-        </div>
-      </button>
+      {/* Checkbox */}
+      <Checkbox
+        checked={task.completed}
+        onToggle={(next) => onToggle(task.id, next)}
+        label={task.completed ? "Mark incomplete" : "Mark complete"}
+      />
 
       {/* Content */}
       <div className="flex-1 min-w-0 pt-0.5">
@@ -114,6 +100,11 @@ function TaskRow({
         }`}>
           {task.title}
         </p>
+        {task.description && (
+          <p className="font-mono text-xs text-parchment-700 mt-1 leading-5 whitespace-pre-wrap break-words">
+            {task.description}
+          </p>
+        )}
         <div className="flex items-center gap-2 mt-1.5 flex-wrap">
           {/* Priority dot + label */}
           <span className="flex items-center gap-1">
@@ -254,6 +245,7 @@ export default function TasksScreen() {
   const { data: session, status } = useSession();
   const dataMode = useDataMode();
   const remote = dataMode === "remote";
+  const { toast } = useToast();
   const [tasks, setTasks]       = useState<Task[]>([]);
   const [filter, setFilter]     = useState<TaskFilter>("pending");
   const [loading, setLoading]   = useState(true);
@@ -261,6 +253,8 @@ export default function TasksScreen() {
   const [editTask, setEditTask] = useState<Task | null>(null);
   const [taskView, setTaskView] = useState<"bars" | "list">("bars");
   const [tab, setTab]           = useState<TabKey>("goals");
+  // 24h active-view cutoff; seeded to the client clock, replaced by the server's on fetch.
+  const [cutoffMs, setCutoffMs] = useState(() => Date.now() - COMPLETED_HIDE_MS);
 
   const fetchTasks = useCallback(async () => {
     if (status === "loading") return;
@@ -269,14 +263,25 @@ export default function TasksScreen() {
       setLoading(false);
       return;
     }
-    const res = await fetch("/api/tasks");
-    if (res.ok) setTasks(await res.json());
+    try {
+      const res = await fetch("/api/tasks");
+      if (res.ok) {
+        setTasks(await res.json());
+        setCutoffMs(readCompletedCutoff(res)); // server-authoritative 24h cutoff
+      } else {
+        toast("couldn't load your tasks. pull to refresh or try again in a moment.");
+      }
+    } catch {
+      toast("couldn't load your tasks. check your connection and try again.");
+    }
     setLoading(false);
-  }, [remote, status]);
+  }, [remote, status, toast]);
 
   useEffect(() => { fetchTasks(); }, [fetchTasks]);
 
-  const handleToggle = async (id: string, completed: boolean) => {
+  // Returns true once the toggle is committed, false on a handled failure — the Checkbox rolls its
+  // own visual back on false, so the parent stays non-optimistic and only updates on success.
+  const handleToggle = async (id: string, completed: boolean): Promise<boolean> => {
     // Completing a task snaps progress to 100 + stamps completedAt (mirrors the API sync rule).
     const patch = (t: Task): Task => ({
       ...t, completed, progress: completed ? 100 : t.progress,
@@ -288,16 +293,24 @@ export default function TasksScreen() {
         ...state,
         tasks: state.tasks.map((t) => (t.id === id ? patch(t) : t)),
       }));
-      return;
+      return true;
     }
-    const res = await fetch(`/api/tasks/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ completed }),
-    });
-    if (res.ok) {
-      const updated: Task = await res.json();
-      setTasks((prev) => prev.map((t) => (t.id === id ? updated : t)));
+    try {
+      const res = await fetch(`/api/tasks/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ completed }),
+      });
+      if (res.ok) {
+        const updated: Task = await res.json();
+        setTasks((prev) => prev.map((t) => (t.id === id ? updated : t)));
+        return true;
+      }
+      toast(completed ? "couldn't mark that done. try again." : "couldn't update that task. try again.");
+      return false;
+    } catch {
+      toast("couldn't reach the server. check your connection and try again.");
+      return false;
     }
   };
 
@@ -312,15 +325,24 @@ export default function TasksScreen() {
       }));
       return;
     }
-    setTasks((prev) => prev.map((t) => (t.id === id ? patch(t) : t))); // optimistic
-    const res = await fetch(`/api/tasks/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ progress }),
-    });
-    if (res.ok) {
-      const updated: Task = await res.json();
-      setTasks((prev) => prev.map((t) => (t.id === id ? updated : t)));
+    const prev = tasks; // snapshot for rollback
+    setTasks((cur) => cur.map((t) => (t.id === id ? patch(t) : t))); // optimistic
+    try {
+      const res = await fetch(`/api/tasks/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ progress }),
+      });
+      if (res.ok) {
+        const updated: Task = await res.json();
+        setTasks((cur) => cur.map((t) => (t.id === id ? updated : t)));
+      } else {
+        setTasks(prev); // rollback
+        toast("couldn't save that progress. try again.");
+      }
+    } catch {
+      setTasks(prev); // rollback
+      toast("couldn't reach the server. check your connection and try again.");
     }
   };
 
@@ -333,18 +355,26 @@ export default function TasksScreen() {
       }));
       return;
     }
-    const res = await fetch(`/api/tasks/${id}`, { method: "DELETE" });
-    if (res.ok) setTasks((prev) => prev.filter((t) => t.id !== id));
+    try {
+      const res = await fetch(`/api/tasks/${id}`, { method: "DELETE" });
+      if (res.ok) setTasks((prev) => prev.filter((t) => t.id !== id));
+      else toast("couldn't delete that task. try again.");
+    } catch {
+      toast("couldn't reach the server. check your connection and try again.");
+    }
   };
 
   const handleAdd = async (data: Partial<Task>) => {
+    // The date picker hands back a bare "YYYY-MM-DD"; turn it into a real instant (local noon)
+    // before it reaches the API — a bare date is what used to silently 400 this whole form.
+    const dueDate = data.dueDate ? localDateToISO(data.dueDate) : null;
     if (!remote) {
       const now = new Date().toISOString();
       const task: Task = {
         id: `demo-task-${Date.now()}`,
         title: data.title ?? "Untitled task",
         description: data.description ?? null,
-        dueDate: data.dueDate ?? null,
+        dueDate,
         completed: false,
         progress: 0,
         priority: data.priority ?? "medium",
@@ -358,15 +388,21 @@ export default function TasksScreen() {
       setShowAdd(false);
       return;
     }
-    const res = await fetch("/api/tasks", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(data),
-    });
-    if (res.ok) {
-      const task: Task = await res.json();
-      setTasks((prev) => [task, ...prev]);
-      setShowAdd(false);
+    try {
+      const res = await fetch("/api/tasks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...data, dueDate }),
+      });
+      if (res.ok) {
+        const task: Task = await res.json();
+        setTasks((prev) => [task, ...prev]);
+        setShowAdd(false);
+      } else {
+        toast("couldn't save that task. check the details and try again.");
+      }
+    } catch {
+      toast("couldn't reach the server. check your connection and try again.");
     }
   };
 
@@ -377,13 +413,21 @@ export default function TasksScreen() {
     // Type changed → convert the task into a reminder/goal (new row in the target table,
     // source task deleted). It leaves this list and appears in its destination view.
     if (item.type !== "task") {
-      if (!remote) convertItemDemo("task", editId, item);
-      else await convertItemRemote("task", editId, item);
-      setTasks((prev) => prev.filter((t) => t.id !== editId));
+      try {
+        if (!remote) {
+          convertItemDemo("task", editId, item);
+        } else {
+          const created = await convertItemRemote("task", editId, item);
+          if (!created) { toast(`couldn't convert that to a ${item.type}. try again.`); return; }
+        }
+        setTasks((prev) => prev.filter((t) => t.id !== editId));
+      } catch {
+        toast(`couldn't convert that to a ${item.type}. try again.`);
+      }
       return;
     }
 
-    const dueDate = item.date ? new Date(item.date + "T12:00:00").toISOString() : null;
+    const dueDate = item.date ? localDateToISO(item.date) : null;
     const apply = (t: Task): Task => ({
       ...t,
       title: item.title,
@@ -399,26 +443,36 @@ export default function TasksScreen() {
       }));
       return;
     }
-    setTasks((prev) => prev.map((t) => (t.id === editId ? apply(t) : t))); // optimistic
-    const res = await fetch(`/api/tasks/${editId}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        title: item.title,
-        priority: item.priority,
-        dueDate,
-        description: item.description || null,
-      }),
-    });
-    if (res.ok) {
-      const updated: Task = await res.json();
-      setTasks((prev) => prev.map((t) => (t.id === editId ? updated : t)));
+    const prev = tasks; // snapshot for rollback
+    setTasks((cur) => cur.map((t) => (t.id === editId ? apply(t) : t))); // optimistic
+    try {
+      const res = await fetch(`/api/tasks/${editId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: item.title,
+          priority: item.priority,
+          dueDate,
+          description: item.description || null,
+        }),
+      });
+      if (res.ok) {
+        const updated: Task = await res.json();
+        setTasks((cur) => cur.map((t) => (t.id === editId ? updated : t)));
+      } else {
+        setTasks(prev); // rollback
+        toast("couldn't save your changes. try again.");
+      }
+    } catch {
+      setTasks(prev); // rollback
+      toast("couldn't reach the server. check your connection and try again.");
     }
   };
 
   const filtered = tasks.filter((t) =>
-    filter === "pending"   ? !t.completed :
-    filter === "completed" ? t.completed  : true
+    filter === "pending"   ? !t.completed :               // pending: unaffected
+    filter === "completed" ? t.completed  :               // completed: the archive — always shows all
+    /* all */                !isTaskCleared(t, cutoffMs)   // hide completed items older than 24h
   );
 
   const pending = tasks.filter((t) => !t.completed).length;

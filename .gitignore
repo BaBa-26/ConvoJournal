@@ -39,11 +39,6 @@ npm-debug.log*
 .idea/
 *.swp
 
-# Python (whisper-service)
-whisper-service/venv/
-whisper-service/__pycache__/
-*.pyc
-
 #claude
 TAask.md
 # Claude skills live in the GLOBAL config (~/.claude/skills), not the repo
