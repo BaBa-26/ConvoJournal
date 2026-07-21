@@ -21,7 +21,8 @@ import { Toggle } from "@/components/settings/controls";
 // app lock, per-entry privacy, transparency, and export/delete.
 export default function PrivacyPanel({ onClose }: { onClose: () => void }) {
   const router = useRouter();
-  const { status } = useSession();
+  const { data: session, status } = useSession();
+  const userId = session?.user?.id ?? null;
   const { storageMode, setStorageMode } = usePreferences();
 
   // ── Storage & sync ──
@@ -107,8 +108,8 @@ export default function PrivacyPanel({ onClose }: { onClose: () => void }) {
   const [lockBusy, setLockBusy] = useState(false);
 
   useEffect(() => {
-    setLockSet(isLockSet());
-  }, []);
+    setLockSet(isLockSet(userId));
+  }, [userId]);
 
   const openLock = (mode: "set" | "change" | "remove") => {
     setPinCurrent("");
@@ -120,6 +121,9 @@ export default function PrivacyPanel({ onClose }: { onClose: () => void }) {
 
   const submitLock = async () => {
     setLockError(null);
+    // The lock is per-account; there is no such thing as a signed-out lock (the UI below is
+    // gated too, this is the belt-and-braces guard).
+    if (!userId) return setLockError("Sign in to use the app lock.");
     if (lockModal === "set" || lockModal === "change") {
       if (pinNew.length < 4) return setLockError("Use at least 4 digits.");
       if (pinNew !== pinConfirm) return setLockError("PINs don't match.");
@@ -127,23 +131,23 @@ export default function PrivacyPanel({ onClose }: { onClose: () => void }) {
     setLockBusy(true);
     try {
       if (lockModal === "set") {
-        await setPin(pinNew);
-        setUnlocked(true);
+        await setPin(userId, pinNew);
+        setUnlocked(userId, true);
         setLockSet(true);
       } else if (lockModal === "change") {
-        const ok = await changePin(pinCurrent, pinNew);
+        const ok = await changePin(userId, pinCurrent, pinNew);
         if (!ok) {
           setLockError("Current PIN is incorrect.");
           return;
         }
-        setUnlocked(true);
+        setUnlocked(userId, true);
       } else if (lockModal === "remove") {
-        const { ok } = await verifyPin(pinCurrent);
+        const { ok } = await verifyPin(userId, pinCurrent);
         if (!ok) {
           setLockError("PIN is incorrect.");
           return;
         }
-        clearLock();
+        clearLock(userId);
         setLockSet(false);
       }
       window.dispatchEvent(new Event(APP_LOCK_CHANGED_EVENT));
@@ -290,7 +294,13 @@ export default function PrivacyPanel({ onClose }: { onClose: () => void }) {
           Require a PIN to open Progress on this device. It&apos;s stored only on this device — never sent
           to the server — and the app also blurs when you switch away.
         </p>
-        {lockSet ? (
+        {status !== "authenticated" ? (
+          // The lock is per-account. A signed-out visitor has no account to protect (demo data is
+          // throwaway), and letting them set one used to lock out the real owner of this browser.
+          <p className="font-mono text-[11px] text-parchment-600">
+            Sign in to use the app lock.
+          </p>
+        ) : lockSet ? (
           <div className="flex flex-col gap-2">
             <p className="font-mono text-[11px] text-accent">App lock is on.</p>
             <button onClick={() => openLock("change")} className="btn-ghost w-full">Change PIN</button>

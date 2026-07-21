@@ -2,13 +2,22 @@
 
 import { useCallback, useEffect, useRef } from "react";
 import type { ParsedEntry, RecordingPhase } from "@/types";
+import { activeLocalAccountId } from "@/lib/localStore";
 
 // Persists an in-progress journal draft to sessionStorage so an accidental tab-off, refresh, or
 // memory-pressure tab-discard doesn't vaporize it. sessionStorage (not localStorage) is
 // deliberate: tab-scoped, clears on a genuine close — the right lifetime for a half-finished
 // thought. A draft is NOT an entry, so it never touches the DB.
-const DRAFT_KEY = "progress:draft";
+// Scoped per account: a draft holds raw journal text, and sessionStorage survives same-tab
+// navigation (including the OAuth round-trip), so an unscoped key could surface one person's
+// half-written entry in another's "resume" prompt on a handed-over tab.
+const DRAFT_KEY_BASE = "progress:draft";
 const MAX_AGE_MS = 6 * 60 * 60 * 1000; // 6h — older than that, it's stale, not a resume
+
+function draftKey(): string {
+  const accountId = activeLocalAccountId();
+  return accountId ? `${DRAFT_KEY_BASE}:${accountId}` : `${DRAFT_KEY_BASE}:guest`;
+}
 
 export interface DraftSnapshot {
   activeContent: string;
@@ -21,11 +30,11 @@ export interface DraftSnapshot {
 // Read any fresh draft (synchronously, for restore-on-mount). Prunes a stale/corrupt one.
 export function readDraft(): DraftSnapshot | null {
   try {
-    const raw = sessionStorage.getItem(DRAFT_KEY);
+    const raw = sessionStorage.getItem(draftKey());
     if (!raw) return null;
     const d = JSON.parse(raw) as DraftSnapshot;
     if (!d || typeof d.at !== "number" || Date.now() - d.at > MAX_AGE_MS || !d.activeContent) {
-      sessionStorage.removeItem(DRAFT_KEY);
+      sessionStorage.removeItem(draftKey());
       return null;
     }
     return d;
@@ -35,7 +44,7 @@ export function readDraft(): DraftSnapshot | null {
 }
 
 export function clearDraft(): void {
-  try { sessionStorage.removeItem(DRAFT_KEY); } catch { /* storage unavailable */ }
+  try { sessionStorage.removeItem(draftKey()); } catch { /* storage unavailable */ }
 }
 
 // Writes `snapshot` on every meaningful change AND on tab-hide / navigation (visibilitychange +
@@ -53,7 +62,7 @@ export function useDraftPersistence(
   const flush = useCallback(() => {
     if (!active.current) return;
     try {
-      sessionStorage.setItem(DRAFT_KEY, JSON.stringify({ ...latest.current, at: Date.now() }));
+      sessionStorage.setItem(draftKey(), JSON.stringify({ ...latest.current, at: Date.now() }));
     } catch { /* storage full/unavailable — nothing else we can do */ }
   }, []);
 

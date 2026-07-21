@@ -1,4 +1,5 @@
 import { WORD_LIST } from "./wordlist";
+import { activeLocalAccountId } from "./localStore";
 
 // ─── Tokeniser ────────────────────────────────────────────────────────────────
 
@@ -101,7 +102,23 @@ function spellCorrect(word: string, wordList: string[], maxDist = 2): string[] {
 
 // ─── N-Gram language model ─────────────────────────────────────────────────────
 
-const LS_KEY = "progress_autocomplete_v1";
+// The model is trained on JOURNAL TEXT, so its storage is per-account — a single global key meant
+// one person's private words resurfaced as another's suggestions on a shared browser. Signed-out
+// visitors get an in-memory-only model (never persisted): there's no account to attribute it to,
+// and a guest's words must not outlive their visit.
+const LS_KEY_BASE = "progress_autocomplete_v1";
+
+function lsKey(): string | null {
+  const accountId = activeLocalAccountId();
+  return accountId ? `${LS_KEY_BASE}:${accountId}` : null;
+}
+
+// Drop the pre-namespacing global model once: it may hold n-grams derived from a different
+// account's (or a guest's) journal text, so it is deleted rather than adopted.
+export function purgeLegacyAutocomplete(): void {
+  if (typeof window === "undefined") return;
+  try { localStorage.removeItem(LS_KEY_BASE); } catch {}
+}
 
 type NMap = Record<string, Record<string, number>>;
 
@@ -112,8 +129,10 @@ class NGramModel {
 
   load(): this {
     if (typeof window === "undefined") return this;
+    const key = lsKey();
+    if (!key) return this; // signed out — in-memory only
     try {
-      const raw = localStorage.getItem(LS_KEY);
+      const raw = localStorage.getItem(key);
       if (raw) {
         const d = JSON.parse(raw) as {
           bi?: NMap; tri?: NMap; vocab?: Record<string, number>;
@@ -128,8 +147,10 @@ class NGramModel {
 
   save(): void {
     if (typeof window === "undefined") return;
+    const key = lsKey();
+    if (!key) return; // signed out — never persist a guest's journal-derived model
     try {
-      localStorage.setItem(LS_KEY, JSON.stringify({
+      localStorage.setItem(key, JSON.stringify({
         bi:    this.bigrams,
         tri:   this.trigrams,
         vocab: this.vocab,
