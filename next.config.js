@@ -2,6 +2,9 @@ const { withSentryConfig } = require("@sentry/nextjs");
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // Suppress the X-Powered-By: Next.js response header so the stack isn't advertised.
+  poweredByHeader: false,
+
   experimental: {
     serverComponentsExternalPackages: ["@prisma/client", "prisma"],
     // Next 14.2: instrumentation.ts (Sentry server/edge init) requires this opt-in.
@@ -28,7 +31,9 @@ const nextConfig = {
               `script-src 'self' 'unsafe-inline'${process.env.NODE_ENV !== "production" ? " 'unsafe-eval'" : ""}`,
               "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
               "font-src 'self' https://fonts.gstatic.com",
-              "img-src 'self' data: https:",          // https: for Google avatar images
+              // Google avatars come from lh3.googleusercontent.com; data: for inline attachment
+              // thumbnails (downscaled images stored as data URLs).
+              "img-src 'self' data: https://lh3.googleusercontent.com",
               "connect-src 'self'",
               "media-src 'self' blob:",               // blob: for MediaRecorder audio
               "frame-ancestors 'none'",
