@@ -52,6 +52,13 @@ export const metadata: Metadata = {
   },
 };
 
+// REQUIRED BY THE NONCE CSP (middleware.ts). The CSP uses a per-request nonce with
+// 'strict-dynamic'; a statically prerendered page would ship a nonce from build time
+// that no longer matches the response header, so every script on it would be blocked
+// and the page would white-screen. Rendering per request keeps the nonce in sync.
+// Removing this without also dropping 'strict-dynamic' from the CSP breaks the app.
+export const dynamic = "force-dynamic";
+
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,

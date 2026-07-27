@@ -21,26 +21,10 @@ const nextConfig = {
           { key: "X-DNS-Prefetch-Control",  value: "off" },
           { key: "Referrer-Policy",         value: "strict-origin-when-cross-origin" },
           { key: "Permissions-Policy",      value: "camera=(), microphone=(self), geolocation=()" },
-          {
-            key: "Content-Security-Policy",
-            value: [
-              "default-src 'self'",
-              // 'unsafe-eval' is only needed for the dev HMR/React-refresh runtime — drop it in
-              // prod so an injected inline <script> can't eval(). ('unsafe-inline' stays until a
-              // nonce-based CSP lands; Next's bootstrap inline scripts need it without nonces.)
-              `script-src 'self' 'unsafe-inline'${process.env.NODE_ENV !== "production" ? " 'unsafe-eval'" : ""}`,
-              "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-              "font-src 'self' https://fonts.gstatic.com",
-              // Google avatars come from lh3.googleusercontent.com; data: for inline attachment
-              // thumbnails (downscaled images stored as data URLs).
-              "img-src 'self' data: https://lh3.googleusercontent.com",
-              "connect-src 'self'",
-              "media-src 'self' blob:",               // blob: for MediaRecorder audio
-              "frame-ancestors 'none'",
-              "base-uri 'self'",
-              "form-action 'self'",
-            ].join("; "),
-          },
+          // NO Content-Security-Policy here. The CSP is nonce-based and therefore
+          // per-request, so it can only be built in middleware.ts. A second static CSP
+          // header would be INTERSECTED with it by the browser, and this one's
+          // `script-src 'self'` would fight the nonce policy. Keep CSP in one place.
           // HSTS — only effective on HTTPS (ignored over HTTP)
           {
             key: "Strict-Transport-Security",

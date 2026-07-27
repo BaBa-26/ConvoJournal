@@ -108,14 +108,64 @@ async function checkDurableAiLimit(ip: string, path: string): Promise<boolean> {
   }
 }
 
+// ─── Content Security Policy (per-request nonce) ──────────────────────────────
+// `script-src 'unsafe-inline'` used to be here (via next.config.js): with it, any
+// HTML-injection bug becomes script execution. The fix is a per-request nonce plus
+// 'strict-dynamic' — Next stamps the nonce onto its own bootstrap/flight scripts
+// (it reads the CSP off the REQUEST header we forward below), and 'strict-dynamic'
+// extends that trust to the chunks those scripts load. An inline script an attacker
+// plants has no nonce, so it cannot run.
+//
+// TWO THINGS THAT MUST STAY TRUE OR THE APP WHITE-SCREENS:
+//  1. 'strict-dynamic' makes CSP3 browsers IGNORE 'self' and 'unsafe-inline' in
+//     script-src ('self' is kept only as a CSP2 fallback). So every script must be
+//     nonced or loaded by an already-trusted script.
+//  2. Every page must render per-request — a prerendered page would ship a stale or
+//     missing nonce. Enforced by `export const dynamic = "force-dynamic"` in
+//     app/layout.tsx. Do not remove one without the other.
+//
+// style-src keeps 'unsafe-inline': next/font and the landing page's inline <style>
+// need it, and injected CSS is not script execution. 'unsafe-eval' is dev-only —
+// React Refresh needs it; prod does not get it.
+
+function generateNonce(): string {
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary);
+}
+
+function buildCsp(nonce: string): string {
+  const isDev = process.env.NODE_ENV !== "production";
+  return [
+    "default-src 'self'",
+    `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'${isDev ? " 'unsafe-eval'" : ""}`,
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+    "font-src 'self' https://fonts.gstatic.com",
+    // Google avatars come from lh3.googleusercontent.com; data: for inline attachment
+    // thumbnails (downscaled images stored as data URLs).
+    "img-src 'self' data: https://lh3.googleusercontent.com",
+    "connect-src 'self'",
+    "media-src 'self' blob:",               // blob: for MediaRecorder audio
+    "worker-src 'self'",                    // public/sw.js
+    "manifest-src 'self'",
+    "frame-ancestors 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+    "object-src 'none'",
+  ].join("; ");
+}
+
 // ─── Security headers added to every response ─────────────────────────────────
 
-function applySecurityHeaders(res: NextResponse): NextResponse {
+function applySecurityHeaders(res: NextResponse, csp?: string): NextResponse {
   res.headers.set("X-Frame-Options",           "DENY");
   res.headers.set("X-Content-Type-Options",    "nosniff");
   res.headers.set("X-DNS-Prefetch-Control",    "off");
   res.headers.set("Referrer-Policy",           "strict-origin-when-cross-origin");
   res.headers.set("Permissions-Policy",        "camera=(), microphone=(self), geolocation=()");
+  if (csp) res.headers.set("Content-Security-Policy", csp);
   return res;
 }
 
@@ -123,6 +173,9 @@ function applySecurityHeaders(res: NextResponse): NextResponse {
 
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
+
+  const nonce = generateNonce();
+  const csp   = buildCsp(nonce);
 
   // Determine client IP (Vercel / standard headers)
   const ip =
@@ -145,13 +198,21 @@ export async function middleware(req: NextRequest) {
             "Content-Type": "application/json",
             "Retry-After":  "60",
           },
-        })
+        }),
+        csp
       );
     }
   }
 
-  const res = NextResponse.next();
-  return applySecurityHeaders(res);
+  // Forward the nonce on the REQUEST: Next reads `Content-Security-Policy` off the
+  // incoming request to learn which nonce to stamp on its own <script> tags. Without
+  // this the response CSP would block Next's own bootstrap.
+  const requestHeaders = new Headers(req.headers);
+  requestHeaders.set("x-nonce", nonce);
+  requestHeaders.set("Content-Security-Policy", csp);
+
+  const res = NextResponse.next({ request: { headers: requestHeaders } });
+  return applySecurityHeaders(res, csp);
 }
 
 export const config = {
