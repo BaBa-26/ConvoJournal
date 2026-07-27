@@ -12,14 +12,15 @@ async function ownedTask(db: ReturnType<typeof forUser>, id: string, userId: str
 
 export async function PATCH(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   const auth = await requireAuth();
   if (auth instanceof NextResponse) return auth;
   const db = forUser(auth.userId);
+  const { id } = await params;   // Next 15: route params are async
 
   try {
-    const task = await ownedTask(db, params.id, auth.userId);
+    const task = await ownedTask(db, id, auth.userId);
     if (!task) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
     const body = await req.json();
@@ -67,7 +68,7 @@ export async function PATCH(
     const transitioned = willComplete !== task.completed;
     if (transitioned) data.completedAt = willComplete ? new Date() : null;
 
-    const updated = await db.task.update({ where: { id: params.id }, data });
+    const updated = await db.task.update({ where: { id }, data });
 
     if (transitioned) {
       if (willComplete) {
@@ -93,17 +94,18 @@ export async function PATCH(
 
 export async function DELETE(
   _req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   const auth = await requireAuth();
   if (auth instanceof NextResponse) return auth;
   const db = forUser(auth.userId);
+  const { id } = await params;   // Next 15: route params are async
 
   try {
-    const task = await ownedTask(db, params.id, auth.userId);
+    const task = await ownedTask(db, id, auth.userId);
     if (!task) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-    await db.task.delete({ where: { id: params.id } });
+    await db.task.delete({ where: { id } });
     return NextResponse.json({ success: true });
   } catch (error) {
     if (process.env.NODE_ENV !== "production") console.error("[tasks DELETE]", error);

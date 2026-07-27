@@ -11,14 +11,15 @@ async function ownedGoal(db: ReturnType<typeof forUser>, id: string, userId: str
 
 export async function PATCH(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   const auth = await requireAuth();
   if (auth instanceof NextResponse) return auth;
   const db = forUser(auth.userId);
+  const { id } = await params;   // Next 15: route params are async
 
   try {
-    const goal = await ownedGoal(db, params.id, auth.userId);
+    const goal = await ownedGoal(db, id, auth.userId);
     if (!goal) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
     const body = await req.json();
@@ -61,7 +62,7 @@ export async function PATCH(
     const transitioned = willComplete !== goal.completed;
     if (transitioned) data.completedAt = willComplete ? new Date() : null;
 
-    const updated = await db.goal.update({ where: { id: params.id }, data });
+    const updated = await db.goal.update({ where: { id }, data });
 
     if (transitioned) {
       if (willComplete) {
@@ -86,17 +87,18 @@ export async function PATCH(
 
 export async function DELETE(
   _req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   const auth = await requireAuth();
   if (auth instanceof NextResponse) return auth;
   const db = forUser(auth.userId);
+  const { id } = await params;   // Next 15: route params are async
 
   try {
-    const goal = await ownedGoal(db, params.id, auth.userId);
+    const goal = await ownedGoal(db, id, auth.userId);
     if (!goal) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-    await db.goal.delete({ where: { id: params.id } });
+    await db.goal.delete({ where: { id } });
     return new NextResponse(null, { status: 204 });
   } catch (error) {
     if (process.env.NODE_ENV !== "production") console.error("[goals DELETE]", error);

@@ -5,11 +5,11 @@ const nextConfig = {
   // Suppress the X-Powered-By: Next.js response header so the stack isn't advertised.
   poweredByHeader: false,
 
-  experimental: {
-    serverComponentsExternalPackages: ["@prisma/client", "prisma"],
-    // Next 14.2: instrumentation.ts (Sentry server/edge init) requires this opt-in.
-    instrumentationHook: true,
-  },
+  // Next 15 renamed this out of `experimental` (was serverComponentsExternalPackages).
+  serverExternalPackages: ["@prisma/client", "prisma"],
+
+  // NOTE: `experimental.instrumentationHook` is gone in Next 15 — instrumentation.ts
+  // (Sentry server/edge init) is enabled by default now, so the opt-in was removed.
 
   async headers() {
     return [
