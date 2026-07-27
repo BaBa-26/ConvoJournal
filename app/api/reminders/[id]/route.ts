@@ -12,14 +12,15 @@ async function ownedReminder(db: ReturnType<typeof forUser>, id: string, userId:
 
 export async function PATCH(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   const auth = await requireAuth();
   if (auth instanceof NextResponse) return auth;
   const db = forUser(auth.userId);
+  const { id } = await params;   // Next 15: route params are async
 
   try {
-    const reminder = await ownedReminder(db, params.id, auth.userId);
+    const reminder = await ownedReminder(db, id, auth.userId);
     if (!reminder) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
     const body = await req.json();
@@ -27,7 +28,7 @@ export async function PATCH(
     if (!parsed.ok) return NextResponse.json(parsed.error, { status: 400 });
 
     const updated = await db.reminder.update({
-      where: { id: params.id },
+      where: { id },
       data: {
         ...(parsed.data.title       !== undefined && { title:       parsed.data.title }),
         ...(parsed.data.description !== undefined && { description: parsed.data.description ?? null }),
@@ -44,17 +45,18 @@ export async function PATCH(
 
 export async function DELETE(
   _req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   const auth = await requireAuth();
   if (auth instanceof NextResponse) return auth;
   const db = forUser(auth.userId);
+  const { id } = await params;   // Next 15: route params are async
 
   try {
-    const reminder = await ownedReminder(db, params.id, auth.userId);
+    const reminder = await ownedReminder(db, id, auth.userId);
     if (!reminder) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-    await db.reminder.delete({ where: { id: params.id } });
+    await db.reminder.delete({ where: { id } });
     return new NextResponse(null, { status: 204 });
   } catch (error) {
     if (process.env.NODE_ENV !== "production") console.error("[reminders DELETE]", error);
