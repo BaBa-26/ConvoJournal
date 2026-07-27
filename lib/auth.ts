@@ -8,6 +8,19 @@ import { prisma } from "./prisma";
 const googleConfigured =
   Boolean(process.env.GOOGLE_CLIENT_ID) && Boolean(process.env.GOOGLE_CLIENT_SECRET);
 
+// The dev-only Credentials provider is a passwordless "log in as any email" backdoor. It is
+// safe in prod today only because Vercel sets NODE_ENV=production — a single mis-set env var
+// (NODE_ENV=development on a hosted deploy) would expose it. Defense in depth: require an
+// EXPLICIT opt-in flag AND refuse when the deployment URL looks like a real https host, so the
+// backdoor can never light up on a production domain regardless of NODE_ENV.
+const nextAuthUrl = process.env.NEXTAUTH_URL ?? "";
+const looksLikeProdDomain =
+  /^https:\/\//i.test(nextAuthUrl) && !/localhost|127\.0\.0\.1|\.local(:|\/|$)/i.test(nextAuthUrl);
+const devLoginEnabled =
+  process.env.NODE_ENV === "development" &&
+  process.env.ENABLE_DEV_LOGIN === "true" &&
+  !looksLikeProdDomain;
+
 // NextAuth's Credentials provider (dev-only) CANNOT create database sessions — the adapter
 // only persists sessions for OAuth/email logins. So in development we use JWT sessions (which
 // the credentials provider supports); production keeps database sessions for Google OAuth,
@@ -26,8 +39,9 @@ export const authOptions: NextAuthOptions = {
         })]
       : []),
 
-    // Dev-only credentials provider — allows testing auth before Google is wired up
-    ...(process.env.NODE_ENV === "development"
+    // Dev-only credentials provider — allows testing auth before Google is wired up.
+    // Opt-in via ENABLE_DEV_LOGIN=true (dev + non-prod-domain only). See devLoginEnabled above.
+    ...(devLoginEnabled
       ? [CredentialsProvider({
           id:   "dev-credentials",
           name: "Dev Login",
